@@ -1,0 +1,183 @@
+# OpenAPI Generator Configuration for Video Generation API
+# This file contains global configuration for generating client SDKs
+
+# Global properties
+globalProperties:
+  models: true
+  apis: true
+  supportingFiles: true
+  modelTests: true
+  apiTests: true
+  modelDocs: true
+  apiDocs: true
+
+# TypeScript configuration
+typescript:
+  generatorName: typescript-fetch
+  outputDir: clients/typescript
+  additionalProperties:
+    npmName: video-api-client
+    npmVersion: 1.0.0
+    supportsES6: true
+    withInterfaces: true
+    typescriptThreePlus: true
+    enumPropertyNaming: PascalCase
+    modelPropertyNaming: camelCase
+    paramNaming: camelCase
+    stringEnums: true
+    withSeparateModelsAndApi: true
+    apiPackage: api
+    modelPackage: models
+  templateDir: templates/typescript
+  
+# Python configuration  
+python:
+  generatorName: python
+  outputDir: clients/python
+  additionalProperties:
+    packageName: video_api_client
+    projectName: video-api-client
+    packageVersion: 1.0.0
+    packageUrl: https://github.com/example/video-api-client-python
+    packageDescription: Python client library for Video Generation API
+    authorName: API Team
+    authorEmail: api-team@example.com
+    library: urllib3
+    generateSourceCodeOnly: false
+  templateDir: templates/python
+
+# Java configuration
+java:
+  generatorName: java
+  outputDir: clients/java
+  additionalProperties:
+    groupId: com.example
+    artifactId: video-api-client
+    artifactVersion: 1.0.0
+    artifactDescription: Java client library for Video Generation API
+    library: okhttp-gson
+    java8: true
+    dateLibrary: java8
+    serializationLibrary: gson
+    hideGenerationTimestamp: true
+  templateDir: templates/java
+
+# C# configuration
+csharp:
+  generatorName: csharp
+  outputDir: clients/csharp
+  additionalProperties:
+    packageName: VideoApiClient
+    packageVersion: 1.0.0
+    clientPackage: VideoApiClient
+    packageCompany: Example Inc
+    packageAuthors: API Team
+    packageCopyright: Copyright 2024
+    packageDescription: C# client library for Video Generation API
+    targetFramework: netstandard2.0
+    library: httpclient
+    generatePropertyChanged: true
+  templateDir: templates/csharp
+
+# Go configuration
+go:
+  generatorName: go
+  outputDir: clients/go
+  additionalProperties:
+    packageName: videoapiclient
+    packageVersion: 1.0.0
+    packageUrl: github.com/example/video-api-client-go
+    hideGenerationTimestamp: true
+    withGoCodegenComment: true
+    enumClassPrefix: true
+  templateDir: templates/go
+
+# PHP configuration
+php:
+  generatorName: php
+  outputDir: clients/php
+  additionalProperties:
+    packageName: VideoApiClient
+    composerVendorName: example
+    composerProjectName: video-api-client
+    packageVersion: 1.0.0
+    invokerPackage: VideoApiClient
+    srcBasePath: src
+    hideGenerationTimestamp: true
+  templateDir: templates/php
+
+# Ruby configuration
+ruby:
+  generatorName: ruby
+  outputDir: clients/ruby
+  additionalProperties:
+    gemName: video_api_client
+    gemVersion: 1.0.0
+    gemHomepage: https://github.com/example/video-api-client-ruby
+    gemSummary: Ruby client library for Video Generation API
+    gemDescription: Ruby client library for the Video Generation API
+    gemAuthor: API Team
+    gemAuthorEmail: api-team@example.com
+    moduleName: VideoApiClient
+    hideGenerationTimestamp: true
+  templateDir: templates/ruby
+
+# Custom templates directory structure
+templates:
+  typescript:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - package.mustache
+  python:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - setup.mustache
+  java:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - pom.mustache
+  csharp:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - Project.mustache
+  go:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - go.mustache
+  php:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - composer.mustache
+  ruby:
+    - api.mustache
+    - model.mustache
+    - README.mustache
+    - gemspec.mustache
+
+# Documentation configuration
+documentation:
+  generateApiDocs: true
+  generateModelDocs: true
+  generateExamples: true
+  includeAuthentication: true
+  includeErrorHandling: true
+  includeRateLimiting: true
+
+# Validation rules
+validation:
+  validateSpec: true
+  strictMode: false
+  allowAdditionalPropertiesWithComposedSchema: true
+
+# Post-processing options
+postProcessing:
+  removeUnusedImports: true
+  formatCode: true
+  generateTests: true
+  generateExamples: true

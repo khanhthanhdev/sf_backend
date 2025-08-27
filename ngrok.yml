@@ -1,0 +1,12 @@
+version: "2"
+authtoken: ${NGROK_AUTHTOKEN}
+
+tunnels:
+  fastapi:
+    addr: fastapi:8000
+    proto: http
+    schemes: [https, http]
+    inspect: true
+    bind_tls: true
+
+web_addr: 0.0.0.0:4040

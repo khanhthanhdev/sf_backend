@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clerk Token Extractor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .step {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 5px;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .token-display {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+            min-height: 50px;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎫 Clerk Token Extractor</h1>
+        <p>This tool helps you extract your Clerk authentication token for API testing.</p>
+        
+        <div class="info">
+            <strong>Prerequisites:</strong> You must be signed in to your application in this browser session.
+        </div>
+
+        <div class="step">
+            <h3>Step 1: Check if Clerk is Available</h3>
+            <button onclick="checkClerk()">Check Clerk Status</button>
+            <div id="clerkStatus"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Extract Token</h3>
+            <button onclick="extractToken()">Get Current Token</button>
+            <button onclick="extractTokenAsync()">Get Fresh Token</button>
+            <div id="tokenResult"></div>
+            <div id="tokenDisplay" class="token-display"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Copy Token</h3>
+            <button onclick="copyToken()" id="copyBtn" disabled>Copy Token to Clipboard</button>
+            <button onclick="downloadToken()" id="downloadBtn" disabled>Download as File</button>
+            <div id="copyResult"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Test Your Token</h3>
+            <p>Use your token with the test scripts:</p>
+            <code>python test_video_simple.py https://your-api-url.com/api/v1 YOUR_TOKEN_HERE</code>
+        </div>
+
+        <div class="step">
+            <h3>Alternative Methods</h3>
+            <details>
+                <summary>Manual Browser Console Method</summary>
+                <ol>
+                    <li>Open Developer Tools (F12)</li>
+                    <li>Go to Console tab</li>
+                    <li>Run: <code>window.Clerk.session.getToken().then(token => console.log(token))</code></li>
+                    <li>Copy the token from console output</li>
+                </ol>
+            </details>
+            
+            <details>
+                <summary>Browser Storage Method</summary>
+                <ol>
+                    <li>Open Developer Tools (F12)</li>
+                    <li>Go to Application/Storage tab</li>
+                    <li>Look in Local Storage for keys starting with '__clerk_'</li>
+                    <li>Find the session data and extract the JWT token</li>
+                </ol>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        let currentToken = null;
+
+        function checkClerk() {
+            const statusDiv = document.getElementById('clerkStatus');
+            
+            if (typeof window.Clerk === 'undefined') {
+                statusDiv.innerHTML = '<span class="error">❌ Clerk not found. Make sure you\'re on a page with Clerk loaded.</span>';
+                return false;
+            }
+
+            if (!window.Clerk.session) {
+                statusDiv.innerHTML = '<span class="error">❌ No active Clerk session. Please sign in first.</span>';
+                return false;
+            }
+
+            statusDiv.innerHTML = '<span class="success">✅ Clerk is available and you have an active session!</span>';
+            return true;
+        }
+
+        function extractToken() {
+            if (!checkClerk()) return;
+
+            const resultDiv = document.getElementById('tokenResult');
+            const tokenDiv = document.getElementById('tokenDisplay');
+
+            try {
+                // Try to get token synchronously first
+                const session = window.Clerk.session;
+                if (session && session.getToken) {
+                    // This might be async, so we'll handle both cases
+                    const tokenResult = session.getToken();
+                    
+                    if (tokenResult && typeof tokenResult.then === 'function') {
+                        // It's a promise
+                        resultDiv.innerHTML = '<span class="info">Getting token asynchronously...</span>';
+                        tokenResult.then(token => {
+                            if (token) {
+                                currentToken = token;
+                                tokenDiv.textContent = token;
+                                resultDiv.innerHTML = '<span class="success">✅ Token extracted successfully!</span>';
+                                enableButtons();
+                            } else {
+                                resultDiv.innerHTML = '<span class="error">❌ Token is null or empty</span>';
+                            }
+                        }).catch(error => {
+                            resultDiv.innerHTML = `<span class="error">❌ Error getting token: ${error.message}</span>`;
+                        });
+                    } else if (tokenResult) {
+                        // It's synchronous
+                        currentToken = tokenResult;
+                        tokenDiv.textContent = tokenResult;
+                        resultDiv.innerHTML = '<span class="success">✅ Token extracted successfully!</span>';
+                        enableButtons();
+                    } else {
+                        resultDiv.innerHTML = '<span class="error">❌ Could not get token</span>';
+                    }
+                } else {
+                    resultDiv.innerHTML = '<span class="error">❌ Session.getToken method not available</span>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        function extractTokenAsync() {
+            if (!checkClerk()) return;
+
+            const resultDiv = document.getElementById('tokenResult');
+            const tokenDiv = document.getElementById('tokenDisplay');
+
+            try {
+                resultDiv.innerHTML = '<span class="info">Getting fresh token...</span>';
+                
+                window.Clerk.session.getToken()
+                    .then(token => {
+                        if (token) {
+                            currentToken = token;
+                            tokenDiv.textContent = token;
+                            resultDiv.innerHTML = '<span class="success">✅ Fresh token extracted successfully!</span>';
+                            enableButtons();
+                        } else {
+                            resultDiv.innerHTML = '<span class="error">❌ Token is null or empty</span>';
+                        }
+                    })
+                    .catch(error => {
+                        resultDiv.innerHTML = `<span class="error">❌ Error getting token: ${error.message}</span>`;
+                    });
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        function enableButtons() {
+            document.getElementById('copyBtn').disabled = false;
+            document.getElementById('downloadBtn').disabled = false;
+        }
+
+        function copyToken() {
+            if (!currentToken) {
+                document.getElementById('copyResult').innerHTML = '<span class="error">❌ No token to copy</span>';
+                return;
+            }
+
+            navigator.clipboard.writeText(currentToken).then(() => {
+                document.getElementById('copyResult').innerHTML = '<span class="success">✅ Token copied to clipboard!</span>';
+            }).catch(err => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = currentToken;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                document.getElementById('copyResult').innerHTML = '<span class="success">✅ Token copied to clipboard!</span>';
+            });
+        }
+
+        function downloadToken() {
+            if (!currentToken) {
+                document.getElementById('copyResult').innerHTML = '<span class="error">❌ No token to download</span>';
+                return;
+            }
+
+            const blob = new Blob([currentToken], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'clerk_token.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            document.getElementById('copyResult').innerHTML = '<span class="success">✅ Token downloaded as file!</span>';
+        }
+
+        // Auto-check Clerk status on page load
+        window.addEventListener('load', () => {
+            setTimeout(checkClerk, 1000);
+        });
+    </script>
+</body>
+</html>

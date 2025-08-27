@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # Redis service for caching and job queuing
+  redis:
+    image: redis:7-alpine
+    container_name: t2m-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ngrok service - simple HTTP tunnel
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: t2m-ngrok
+    restart: unless-stopped
+    command: ["http", "host.docker.internal:8000"]
+    ports:
+      - "4040:4040"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  redis_data:

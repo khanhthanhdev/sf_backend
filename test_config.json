@@ -1,0 +1,19 @@
+{
+  "api_config": {
+    "base_url": "https://your-api-domain.com/api/v1",
+    "token": "your-bearer-token-here"
+  },
+  "test_settings": {
+    "timeout": 30,
+    "cleanup_resources": true,
+    "save_results": true
+  },
+  "test_data": {
+    "test_file_content": "This is a test file for API testing",
+    "video_generation": {
+      "prompt": "A simple test video for API validation",
+      "duration": 5,
+      "quality": "720p"
+    }
+  }
+}
