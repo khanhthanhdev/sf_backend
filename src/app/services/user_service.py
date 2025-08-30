@@ -20,6 +20,13 @@ from ..models.user import (
     UserRole,
     AuthenticationContext
 )
+from ..models.user_relationships import (
+    UserDataSummary,
+    UserJobHistoryModel,
+    JobHistoryStats,
+    CleanupResult,
+    DataRetentionPolicy
+)
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +476,124 @@ class UserService:
         except Exception as e:
             logger.error(f"Session cleanup failed: {e}")
             return 0
+    
+    # User relationship management methods
+    
+    async def get_user_data_summary(self, user_id: str) -> Optional[UserDataSummary]:
+        """
+        Get comprehensive user data summary including file and job relationships.
+        
+        Args:
+            user_id: Clerk user ID
+            
+        Returns:
+            UserDataSummary or None if user not found
+        """
+        try:
+            # This method would integrate with the UserRelationshipService
+            # For now, return a basic summary based on available data
+            
+            user_data = await self.get_user_data(user_id)
+            if not user_data:
+                return None
+            
+            # Create basic summary (would be enhanced with database integration)
+            summary = UserDataSummary(
+                user_id=user_id,
+                account_created=datetime.fromisoformat(user_data.get("created_at", datetime.utcnow().isoformat())),
+                account_age_days=(datetime.utcnow() - datetime.fromisoformat(user_data.get("created_at", datetime.utcnow().isoformat()))).days,
+                last_active=datetime.fromisoformat(user_data.get("last_sign_in_at")) if user_data.get("last_sign_in_at") else None,
+                status="active",  # Would come from database
+                role="user",     # Would come from database
+                total_files=0,   # Would come from database
+                total_file_size_bytes=0,  # Would come from database
+                total_file_size_mb=0.0,   # Would come from database
+                total_jobs=0,    # Would come from database
+                completed_jobs=0,  # Would come from database
+                failed_jobs=0,     # Would come from database
+                active_jobs=0,     # Would come from database
+                avg_processing_time=0.0,  # Would come from database
+                job_types_used=[],        # Would come from database
+                file_types={},            # Would come from database
+                cleanup_recommended=False  # Would be calculated
+            )
+            
+            logger.info(f"Generated user data summary for {user_id}")
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Failed to get user data summary for {user_id}: {e}")
+            return None
+    
+    async def get_user_job_history(self, user_id: str) -> Optional[UserJobHistoryModel]:
+        """
+        Get user job history and statistics.
+        
+        Args:
+            user_id: Clerk user ID
+            
+        Returns:
+            UserJobHistoryModel or None if user not found
+        """
+        try:
+            # This would integrate with the UserRelationshipService
+            # For now, return empty history
+            
+            from uuid import UUID
+            
+            history = UserJobHistoryModel(
+                user_id=UUID(user_id) if user_id.count('-') == 4 else UUID('00000000-0000-0000-0000-000000000000'),
+                stats=JobHistoryStats(),
+                recent_activity=[],
+                daily_job_counts={},
+                weekly_averages={},
+                monthly_totals={}
+            )
+            
+            logger.info(f"Generated job history for {user_id}")
+            return history
+            
+        except Exception as e:
+            logger.error(f"Failed to get user job history for {user_id}: {e}")
+            return None
+    
+    async def cleanup_user_data(self, user_id: str, retention_policy: Optional[DataRetentionPolicy] = None, 
+                               dry_run: bool = True) -> Optional[CleanupResult]:
+        """
+        Clean up user data based on retention policies.
+        
+        Args:
+            user_id: Clerk user ID
+            retention_policy: Custom retention policy
+            dry_run: Whether to perform actual cleanup
+            
+        Returns:
+            CleanupResult or None if failed
+        """
+        try:
+            # This would integrate with the UserRelationshipService
+            # For now, return empty cleanup result
+            
+            result = CleanupResult(
+                user_id=user_id,
+                dry_run=dry_run,
+                cleanup_date=datetime.utcnow(),
+                jobs_cleaned=0,
+                files_cleaned=0,
+                logs_cleaned=0,
+                total_space_freed=0,
+                jobs_by_status={},
+                files_by_type={},
+                errors=[],
+                warnings=[]
+            )
+            
+            logger.info(f"Cleanup {'simulation' if dry_run else 'execution'} completed for {user_id}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup user data for {user_id}: {e}")
+            return None
 
 
 # Global user service instance

@@ -16,6 +16,11 @@ from ..services.video_service import VideoService
 from ..services.job_service import JobService
 from ..services.queue_service import QueueService
 from ..services.file_service import FileService
+from ..services.aws_service_factory import AWSServiceFactory
+from ..services.aws_video_service import AWSVideoService
+from ..services.aws_job_service import AWSJobService
+from ..services.aws_s3_file_service import AWSS3FileService
+from ..services.aws_user_service import AWSUserService
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +185,145 @@ def get_file_service(
         FileService instance
     """
     return FileService(redis_client)
+
+
+# AWS Service Dependencies
+
+def get_aws_service_factory(request: Request) -> Optional[AWSServiceFactory]:
+    """
+    FastAPI dependency to get AWS Service Factory instance.
+    
+    Args:
+        request: FastAPI request object to access app state
+        
+    Returns:
+        AWSServiceFactory instance or None if not initialized
+    """
+    return getattr(request.app.state, 'aws_service_factory', None)
+
+
+def get_aws_file_service(
+    aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
+) -> AWSS3FileService:
+    """
+    FastAPI dependency to get AWS S3 File Service instance.
+    
+    Args:
+        aws_factory: AWS service factory dependency
+        
+    Returns:
+        AWSS3FileService instance
+        
+    Raises:
+        HTTPException: If AWS services not available
+    """
+    if not aws_factory:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS services not available"
+        )
+    
+    try:
+        return aws_factory.create_file_service()
+    except Exception as e:
+        logger.error(f"Failed to create AWS file service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS file service unavailable"
+        )
+
+
+def get_aws_video_service(
+    aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
+) -> AWSVideoService:
+    """
+    FastAPI dependency to get AWS Video Service instance.
+    
+    Args:
+        aws_factory: AWS service factory dependency
+        
+    Returns:
+        AWSVideoService instance
+        
+    Raises:
+        HTTPException: If AWS services not available
+    """
+    if not aws_factory:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS services not available"
+        )
+    
+    try:
+        return aws_factory.create_video_service()
+    except Exception as e:
+        logger.error(f"Failed to create AWS video service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS video service unavailable"
+        )
+
+
+def get_aws_job_service(
+    aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
+) -> AWSJobService:
+    """
+    FastAPI dependency to get AWS Job Service instance.
+    
+    Args:
+        aws_factory: AWS service factory dependency
+        
+    Returns:
+        AWSJobService instance
+        
+    Raises:
+        HTTPException: If AWS services not available
+    """
+    if not aws_factory:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS services not available"
+        )
+    
+    try:
+        return aws_factory.create_job_service()
+    except Exception as e:
+        logger.error(f"Failed to create AWS job service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS job service unavailable"
+        )
+
+
+def get_aws_user_service(
+    aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
+) -> AWSUserService:
+    """
+    FastAPI dependency to get AWS User Service instance.
+    
+    Args:
+        aws_factory: AWS service factory dependency
+        
+    Returns:
+        AWSUserService instance
+        
+    Raises:
+        HTTPException: If AWS services not available
+    """
+    if not aws_factory:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS services not available"
+        )
+    
+    try:
+        return aws_factory.create_user_service()
+    except Exception as e:
+        logger.error(f"Failed to create AWS user service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS user service unavailable"
+        )
 
 
 class PaginationParams:

@@ -8,6 +8,7 @@ upload, download, metadata retrieval, and file management.
 import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import (
     APIRouter, Depends, HTTPException, status, UploadFile, File, Form,
@@ -27,8 +28,10 @@ from ...models.file import (
 )
 from ...models.common import PaginatedResponse
 from ...services.file_service import FileService
-from ...api.dependencies import get_current_user, get_file_service
+from ...services.aws_s3_file_service import AWSS3FileService
+from ...api.dependencies import get_current_user, get_file_service, get_aws_file_service
 from ...utils.file_utils import FileMetadata
+from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
@@ -41,7 +44,7 @@ async def upload_file(
     subdirectory: Optional[str] = Form(None, description="Optional subdirectory"),
     description: Optional[str] = Form(None, description="File description"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service)
+    aws_file_service: AWSS3FileService = Depends(get_aws_file_service)
 ) -> FileUploadResponse:
     """
     Upload a single file.
@@ -72,19 +75,19 @@ async def upload_file(
             file_type=file_type
         )
         
-        # Upload file
-        file_metadata = await file_service.upload_file(
+        # Upload file using AWS S3 service
+        upload_result = await aws_file_service.upload_file(
             file=file,
             user_id=current_user["user_info"]["id"],
-            file_type=file_type.value if file_type else None,
-            subdirectory=subdirectory
+            file_type=file_type.value if file_type else "general",
+            job_id=None,  # No job association for direct uploads
+            metadata={"description": description} if description else None
         )
         
-        # Generate download URL
-        download_url = await file_service.generate_download_url(
-            file_id=Path(file_metadata.filename).stem,
-            user_id=current_user["user_info"]["id"]
-        )
+        # Extract file metadata from upload result
+        file_id = upload_result.get("file_id")
+        s3_url = upload_result.get("s3_url")
+        download_url = upload_result.get("download_url")
         
         logger.info(
             "File uploaded successfully",
@@ -95,28 +98,24 @@ async def upload_file(
         )
         
         return FileUploadResponse(
-            file_id=Path(file_metadata.filename).stem,
-            filename=file_metadata.filename,
-            file_type=FileType(file_metadata.file_type),
-            file_size=file_metadata.file_size,
-            download_url=download_url or f"/api/v1/files/{Path(file_metadata.filename).stem}/download",
-            created_at=file_metadata.created_at
+            file_id=file_id,
+            filename=file.filename,
+            file_type=FileType(file_type.value if file_type else "general"),
+            file_size=file.size,
+            download_url=download_url or f"/api/v1/files/{file_id}/download",
+            created_at=datetime.utcnow()
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to upload file",
-            filename=file.filename,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "file_upload",
+            "filename": file.filename,
+            "user_id": current_user["user_info"]["id"],
+            "file_type": file_type.value if file_type else None
+        })
+        raise handle_aws_service_error(e, "s3", "file upload")
 
 
 @router.post("/batch-upload", response_model=FileBatchUploadResponse)
@@ -126,7 +125,7 @@ async def batch_upload_files(
     subdirectory: Optional[str] = Form(None, description="Subdirectory for all files"),
     description: Optional[str] = Form(None, description="Description for all files"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service)
+    aws_file_service: AWSS3FileService = Depends(get_aws_file_service)
 ) -> FileBatchUploadResponse:
     """
     Upload multiple files in batch.
@@ -160,27 +159,26 @@ async def batch_upload_files(
         
         for file in files:
             try:
-                # Upload individual file
-                file_metadata = await file_service.upload_file(
+                # Upload individual file using AWS S3 service
+                upload_result = await aws_file_service.upload_file(
                     file=file,
                     user_id=current_user["user_info"]["id"],
-                    file_type=file_type.value if file_type else None,
-                    subdirectory=subdirectory
+                    file_type=file_type.value if file_type else "general",
+                    job_id=None,
+                    metadata={"description": description} if description else None
                 )
                 
-                # Generate download URL
-                download_url = await file_service.generate_download_url(
-                    file_id=Path(file_metadata.filename).stem,
-                    user_id=current_user["user_info"]["id"]
-                )
+                # Extract file metadata from upload result
+                file_id = upload_result.get("file_id")
+                download_url = upload_result.get("download_url")
                 
                 successful_uploads.append(FileUploadResponse(
-                    file_id=Path(file_metadata.filename).stem,
-                    filename=file_metadata.filename,
-                    file_type=FileType(file_metadata.file_type),
-                    file_size=file_metadata.file_size,
-                    download_url=download_url or f"/api/v1/files/{Path(file_metadata.filename).stem}/download",
-                    created_at=file_metadata.created_at
+                    file_id=file_id,
+                    filename=file.filename,
+                    file_type=FileType(file_type.value if file_type else "general"),
+                    file_size=file.size,
+                    download_url=download_url or f"/api/v1/files/{file_id}/download",
+                    created_at=datetime.utcnow()
                 ))
                 
             except Exception as e:
@@ -209,11 +207,12 @@ async def batch_upload_files(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Batch upload failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Batch upload failed: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "batch_file_upload",
+            "file_count": len(files),
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "s3", "batch file upload")
 
 
 @router.get("/{file_id}/download")
@@ -222,7 +221,7 @@ async def download_file(
     request: Request,
     inline: bool = Query(False, description="Serve file inline instead of attachment"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service)
+    aws_file_service: AWSS3FileService = Depends(get_aws_file_service)
 ) -> StreamingResponse:
     """
     Download a file by ID with range request support and caching.
@@ -241,46 +240,38 @@ async def download_file(
         HTTPException: If file not found or access denied
     """
     try:
-        # Get file metadata
-        file_metadata = await file_service.get_file_metadata(
-            file_id=file_id,
-            user_id=current_user["user_info"]["id"]
-        )
-        
-        if not file_metadata:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found"
+        try:
+            # Get file download URL from AWS S3 service
+            download_response = await aws_file_service.download_file(
+                file_id=file_id,
+                user_id=current_user["user_info"]["id"]
             )
-        
-        logger.info(
-            "Serving file download",
-            file_id=file_id,
-            filename=file_metadata.filename,
-            user_id=current_user["user_info"]["id"],
-            inline=inline
-        )
-        
-        # Track file access
-        from ...utils.file_cache import track_file_access
-        await track_file_access(
-            file_id=file_id,
-            user_id=current_user["user_info"]["id"],
-            access_type="download"
-        )
-        
-        # Use enhanced file serving with user context
-        from ...utils.file_serving import serve_file_secure
-        
-        return await serve_file_secure(
-            file_path=file_metadata.file_path,
-            file_type=file_metadata.file_type,
-            original_filename=file_metadata.original_filename,
-            request=request,
-            inline=inline,
-            enable_caching=True,
-            user_id=current_user["user_info"]["id"]
-        )
+            
+            if not download_response:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found"
+                )
+            
+            logger.info(
+                "Serving file download",
+                file_id=file_id,
+                user_id=current_user["user_info"]["id"],
+                inline=inline
+            )
+            
+            # Return the streaming response from AWS S3 service
+            return download_response
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            log_aws_error(e, {
+                "operation": "file_download",
+                "file_id": file_id,
+                "user_id": current_user["user_info"]["id"]
+            })
+            raise handle_aws_service_error(e, "s3", "file download")
         
     except HTTPException:
         raise
@@ -296,7 +287,7 @@ async def download_file(
 async def get_file_metadata(
     file_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service)
+    aws_file_service: AWSS3FileService = Depends(get_aws_file_service)
 ) -> FileMetadataResponse:
     """
     Get file metadata by ID.
@@ -313,35 +304,46 @@ async def get_file_metadata(
         HTTPException: If file not found or access denied
     """
     try:
-        file_metadata = await file_service.get_file_metadata(
-            file_id=file_id,
-            user_id=current_user["user_info"]["id"]
-        )
-        
-        if not file_metadata:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found"
+        try:
+            file_metadata = await aws_file_service.get_file_metadata(
+                file_id=file_id,
+                user_id=current_user["user_info"]["id"]
             )
-        
-        # Generate download URL
-        download_url = await file_service.generate_download_url(
-            file_id=file_id,
-            user_id=current_user["user_info"]["id"]
-        )
-        
-        return FileMetadataResponse(
-            id=file_id,
-            filename=file_metadata.filename,
-            original_filename=file_metadata.original_filename,
-            file_type=FileType(file_metadata.file_type),
-            mime_type=file_metadata.mime_type,
-            file_size=file_metadata.file_size,
-            checksum=file_metadata.checksum,
-            created_at=file_metadata.created_at,
-            download_url=download_url,
-            metadata=file_metadata.metadata
-        )
+            
+            if not file_metadata:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found"
+                )
+            
+            # Generate download URL
+            download_url = await aws_file_service.generate_presigned_url(
+                file_id=file_id,
+                user_id=current_user["user_info"]["id"]
+            )
+            
+            return FileMetadataResponse(
+                id=file_id,
+                filename=file_metadata.get("filename", "unknown"),
+                original_filename=file_metadata.get("original_filename", "unknown"),
+                file_type=FileType(file_metadata.get("file_type", "general")),
+                mime_type=file_metadata.get("content_type", "application/octet-stream"),
+                file_size=file_metadata.get("file_size", 0),
+                checksum=file_metadata.get("checksum", ""),
+                created_at=file_metadata.get("created_at", datetime.utcnow()),
+                download_url=download_url,
+                metadata=file_metadata.get("metadata", {})
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            log_aws_error(e, {
+                "operation": "get_file_metadata",
+                "file_id": file_id,
+                "user_id": current_user["user_info"]["id"]
+            })
+            raise handle_aws_service_error(e, "s3", "get file metadata")
         
     except HTTPException:
         raise

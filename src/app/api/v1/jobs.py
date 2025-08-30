@@ -20,10 +20,12 @@ from ...models.job import (
     JobStatusResponse, JobType, JobPriority
 )
 from ...services.job_service import JobService
+from ...services.aws_job_service import AWSJobService
 from ...api.dependencies import (
-    get_current_user, get_job_service, get_pagination_params,
+    get_current_user, get_job_service, get_aws_job_service, get_pagination_params,
     get_job_filters, PaginationParams, JobFilters, validate_job_ownership
 )
+from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -35,7 +37,7 @@ async def list_jobs(
     current_user: Dict[str, Any] = Depends(get_current_user),
     pagination: PaginationParams = Depends(get_pagination_params),
     filters: JobFilters = Depends(get_job_filters),
-    job_service: JobService = Depends(get_job_service)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service)
 ) -> JobListResponse:
     """
     List jobs for the current user with pagination and filtering.
@@ -66,8 +68,8 @@ async def list_jobs(
             filters=filters.to_dict()
         )
         
-        # Get jobs from service
-        jobs_result = await job_service.get_jobs_paginated(
+        # Get jobs from AWS service
+        jobs_result = await aws_job_service.get_user_jobs(
             user_id=user_id,
             limit=pagination.limit,
             offset=pagination.offset,
@@ -76,13 +78,13 @@ async def list_jobs(
         
         # Convert jobs to response format
         job_responses = []
-        for job in jobs_result["jobs"]:
+        for job in jobs_result.get("jobs", []):
             job_responses.append(JobResponse(
-                job_id=job.id,
-                status=job.status,
-                progress=job.progress,
-                created_at=job.created_at,
-                estimated_completion=job.progress.estimated_completion
+                job_id=job.get("id"),
+                status=job.get("status"),
+                progress=job.get("progress_percentage", 0),
+                created_at=job.get("created_at"),
+                estimated_completion=job.get("estimated_completion")
             ))
         
         # Calculate pagination info
@@ -107,24 +109,20 @@ async def list_jobs(
         )
         
     except Exception as e:
-        logger.error(
-            "Failed to list jobs",
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve jobs: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "list_jobs",
+            "user_id": current_user["user_info"]["id"],
+            "page": pagination.page,
+            "items_per_page": pagination.items_per_page
+        })
+        raise handle_aws_service_error(e, "rds", "list jobs")
 
 
 @router.post("/{job_id}/cancel", response_model=Dict[str, Any])
 async def cancel_job(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    job_service: JobService = Depends(get_job_service),
-    redis_client: Redis = Depends(get_redis)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service)
 ) -> Dict[str, Any]:
     """
     Cancel a specific job.
@@ -145,9 +143,11 @@ async def cancel_job(
         HTTPException: If job not found, access denied, or cancellation fails
     """
     try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
+        # Get job from AWS service
+        job_data = await aws_job_service.get_job(
+            job_id=job_id,
+            user_id=current_user["user_info"]["id"]
+        )
         
         if not job_data:
             raise HTTPException(
@@ -155,27 +155,26 @@ async def cancel_job(
                 detail=f"Job {job_id} not found"
             )
         
-        job = Job(**job_data)
-        
         # Verify user owns this job
-        validate_job_ownership(job.user_id, current_user)
+        validate_job_ownership(job_data.get("user_id"), current_user)
         
         # Check if job can be cancelled
-        if not job.can_be_cancelled:
+        current_status = job_data.get("status")
+        if current_status in ["completed", "failed", "cancelled"]:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Job cannot be cancelled. Current status: {job.status}"
+                detail=f"Job cannot be cancelled. Current status: {current_status}"
             )
         
         logger.info(
             "Cancelling job",
             job_id=job_id,
-            current_status=job.status,
+            current_status=current_status,
             user_id=current_user["user_info"]["id"]
         )
         
-        # Cancel job using service
-        success = await job_service.cancel_job(job_id)
+        # Cancel job using AWS service
+        success = await aws_job_service.cancel_job(job_id)
         
         if not success:
             raise HTTPException(
@@ -193,7 +192,7 @@ async def cancel_job(
             "success": True,
             "message": f"Job {job_id} has been cancelled",
             "job_id": job_id,
-            "previous_status": job.status,
+            "previous_status": current_status,
             "new_status": "cancelled",
             "cancelled_at": datetime.utcnow().isoformat()
         }
@@ -201,25 +200,19 @@ async def cancel_job(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to cancel job",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cancel job: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "cancel_job",
+            "job_id": job_id,
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "rds", "cancel job")
 
 
 @router.delete("/{job_id}", response_model=Dict[str, Any])
 async def delete_job(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    job_service: JobService = Depends(get_job_service),
-    redis_client: Redis = Depends(get_redis)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service)
 ) -> Dict[str, Any]:
     """
     Delete a specific job (soft delete).
@@ -241,9 +234,11 @@ async def delete_job(
         HTTPException: If job not found, access denied, or deletion fails
     """
     try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
+        # Get job from AWS service
+        job_data = await aws_job_service.get_job(
+            job_id=job_id,
+            user_id=current_user["user_info"]["id"]
+        )
         
         if not job_data:
             raise HTTPException(
@@ -251,44 +246,30 @@ async def delete_job(
                 detail=f"Job {job_id} not found"
             )
         
-        job = Job(**job_data)
-        
         # Verify user owns this job
-        validate_job_ownership(job.user_id, current_user)
+        validate_job_ownership(job_data.get("user_id"), current_user)
         
-        # Check if job is already deleted
-        if job.is_deleted:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Job is already deleted"
-            )
+        current_status = job_data.get("status")
         
         logger.info(
             "Deleting job",
             job_id=job_id,
-            status=job.status,
+            status=current_status,
             user_id=current_user["user_info"]["id"]
         )
         
         # Cancel job if it's still active
-        if job.can_be_cancelled:
-            await job_service.cancel_job(job_id)
+        if current_status in ["queued", "processing"]:
+            await aws_job_service.cancel_job(job_id)
         
         # Perform soft delete
-        success = await job_service.soft_delete_job(job_id)
+        success = await aws_job_service.delete_job(job_id)
         
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to delete job"
             )
-        
-        # Remove from user's job index
-        user_jobs_key = RedisKeyManager.user_jobs_key(current_user["user_info"]["id"])
-        await redis_client.srem(user_jobs_key, job_id)
-        
-        # Clean up related data (video metadata, cache entries)
-        await job_service.cleanup_job_data(job_id)
         
         logger.info(
             "Job deleted successfully",
@@ -306,17 +287,12 @@ async def delete_job(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to delete job",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete job: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "delete_job",
+            "job_id": job_id,
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "rds", "delete job")
 
 
 @router.get("/{job_id}/logs", response_model=Dict[str, Any])
@@ -326,7 +302,7 @@ async def get_job_logs(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of log entries"),
     offset: int = Query(0, ge=0, description="Number of log entries to skip"),
     level: Optional[str] = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
-    redis_client: Redis = Depends(get_redis)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service)
 ) -> Dict[str, Any]:
     """
     Get processing logs for a specific job.
@@ -349,9 +325,11 @@ async def get_job_logs(
         HTTPException: If job not found or access denied
     """
     try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
+        # Get job from AWS service
+        job_data = await aws_job_service.get_job(
+            job_id=job_id,
+            user_id=current_user["user_info"]["id"]
+        )
         
         if not job_data:
             raise HTTPException(
@@ -359,10 +337,8 @@ async def get_job_logs(
                 detail=f"Job {job_id} not found"
             )
         
-        job = Job(**job_data)
-        
         # Verify user owns this job
-        validate_job_ownership(job.user_id, current_user)
+        validate_job_ownership(job_data.get("user_id"), current_user)
         
         logger.info(
             "Retrieving job logs",
@@ -373,43 +349,23 @@ async def get_job_logs(
             user_id=current_user["user_info"]["id"]
         )
         
-        # Get logs from Redis (stored as a list)
-        logs_key = f"job_logs:{job_id}"
-        
-        # Get total log count
-        total_logs = await redis_client.llen(logs_key)
-        
-        # Get log entries with pagination
-        log_entries = []
-        if total_logs > 0:
-            # Redis lists are 0-indexed, get range with offset and limit
-            end_index = offset + limit - 1
-            if end_index >= total_logs:
-                end_index = total_logs - 1
+        # Get logs from AWS service
+        try:
+            logs_result = await aws_job_service.get_job_logs(
+                job_id=job_id,
+                limit=limit,
+                offset=offset,
+                level=level
+            )
             
-            if offset < total_logs:
-                raw_logs = await redis_client.lrange(logs_key, offset, end_index)
-                
-                # Parse and filter logs
-                for log_entry in raw_logs:
-                    try:
-                        import json
-                        log_data = json.loads(log_entry)
-                        
-                        # Filter by level if specified
-                        if level and log_data.get("level", "").upper() != level.upper():
-                            continue
-                        
-                        log_entries.append(log_data)
-                        
-                    except json.JSONDecodeError:
-                        # Handle plain text logs
-                        log_entries.append({
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "level": "INFO",
-                            "message": log_entry,
-                            "source": "system"
-                        })
+            log_entries = logs_result.get("logs", [])
+            total_logs = logs_result.get("total_count", 0)
+            
+        except Exception as e:
+            logger.warning(f"Failed to get job logs from AWS service: {e}")
+            # Fallback to empty logs
+            log_entries = []
+            total_logs = 0
         
         # Calculate pagination info
         has_more = (offset + limit) < total_logs
@@ -436,34 +392,29 @@ async def get_job_logs(
                 "level": level
             },
             "job_info": {
-                "status": job.status,
-                "created_at": job.created_at.isoformat(),
-                "updated_at": job.updated_at.isoformat(),
-                "progress": job.progress.percentage
+                "status": job_data.get("status"),
+                "created_at": job_data.get("created_at"),
+                "updated_at": job_data.get("updated_at"),
+                "progress": job_data.get("progress_percentage", 0)
             }
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to get job logs",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve job logs: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "get_job_logs",
+            "job_id": job_id,
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "rds", "get job logs")
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job_details(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    redis_client: Redis = Depends(get_redis)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service)
 ) -> JobStatusResponse:
     """
     Get detailed information about a specific job.
@@ -483,9 +434,11 @@ async def get_job_details(
         HTTPException: If job not found or access denied
     """
     try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
+        # Get job from AWS service
+        job_data = await aws_job_service.get_job(
+            job_id=job_id,
+            user_id=current_user["user_info"]["id"]
+        )
         
         if not job_data:
             raise HTTPException(
@@ -493,40 +446,33 @@ async def get_job_details(
                 detail=f"Job {job_id} not found"
             )
         
-        job = Job(**job_data)
-        
         # Verify user owns this job
-        validate_job_ownership(job.user_id, current_user)
+        validate_job_ownership(job_data.get("user_id"), current_user)
         
         logger.info(
             "Retrieved job details",
             job_id=job_id,
-            status=job.status,
+            status=job_data.get("status"),
             user_id=current_user["user_info"]["id"]
         )
         
         return JobStatusResponse(
-            job_id=job.id,
-            status=job.status,
-            progress=job.progress,
-            error=job.error,
-            metrics=job.metrics,
-            created_at=job.created_at,
-            updated_at=job.updated_at,
-            completed_at=job.completed_at
+            job_id=job_data.get("id"),
+            status=job_data.get("status"),
+            progress=job_data.get("progress_percentage", 0),
+            error=job_data.get("error_info"),
+            metrics=job_data.get("metrics"),
+            created_at=job_data.get("created_at"),
+            updated_at=job_data.get("updated_at"),
+            completed_at=job_data.get("completed_at")
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to get job details",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve job details: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "get_job_details",
+            "job_id": job_id,
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "rds", "get job details")

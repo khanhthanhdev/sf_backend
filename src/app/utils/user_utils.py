@@ -14,7 +14,8 @@ from fastapi import HTTPException, status
 from ..core.auth import ClerkManager, ClerkAuthError, get_clerk_manager
 from ..models.user import (
     ClerkUser, UserProfile, UserSession, UserPermissions, 
-    AuthenticationContext, UserRole, UserStatus
+    AuthenticationContext, UserRole, UserStatus,
+    ClerkEmailAddress, ClerkPhoneNumber
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,42 @@ class UserDataExtractor:
             # Get raw user info from Clerk
             user_info = await self.clerk_manager.get_user_info(user_id)
             
+            # Process email addresses
+            email_addresses = []
+            if user_info.get("email_addresses"):
+                for email_data in user_info["email_addresses"]:
+                    verification = email_data.get("verification", {})
+                    email_addresses.append(ClerkEmailAddress(
+                        id=email_data.get("id", ""),
+                        email_address=email_data.get("email_address", ""),
+                        verification_status=verification.get("status", "unverified"),
+                        verification_strategy=verification.get("strategy"),
+                        created_at=datetime.utcnow(),  # Placeholder
+                        updated_at=datetime.utcnow()   # Placeholder
+                    ))
+            
+            # Process phone numbers (similar to emails)
+            phone_numbers = []
+            if user_info.get("phone_numbers"):
+                for phone_data in user_info["phone_numbers"]:
+                    verification = phone_data.get("verification", {})
+                    phone_numbers.append(ClerkPhoneNumber(
+                        id=phone_data.get("id", ""),
+                        phone_number=phone_data.get("phone_number", ""),
+                        verification_status=verification.get("status", "unverified"),
+                        verification_strategy=verification.get("strategy"),
+                        created_at=datetime.utcnow(),  # Placeholder
+                        updated_at=datetime.utcnow()   # Placeholder
+                    ))
+            
+            # Convert timestamps
+            def parse_timestamp(ts):
+                if isinstance(ts, (int, float)):
+                    return datetime.fromtimestamp(ts / 1000.0)  # Clerk uses milliseconds
+                elif isinstance(ts, str):
+                    return datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                return datetime.utcnow()
+            
             # Convert to ClerkUser model with proper validation
             clerk_user = ClerkUser(
                 id=user_info["id"],
@@ -55,10 +92,15 @@ class UserDataExtractor:
                 first_name=user_info.get("first_name"),
                 last_name=user_info.get("last_name"),
                 image_url=user_info.get("image_url"),
+                email_addresses=email_addresses,
+                phone_numbers=phone_numbers,
                 email_verified=user_info.get("email_verified", False),
-                created_at=user_info["created_at"],
-                updated_at=user_info["updated_at"],
-                last_sign_in_at=user_info.get("last_sign_in_at")
+                phone_verified=user_info.get("phone_verified", False),
+                two_factor_enabled=user_info.get("two_factor_enabled", False),
+                created_at=parse_timestamp(user_info.get("created_at")) if user_info.get("created_at") else datetime.utcnow(),
+                updated_at=parse_timestamp(user_info.get("updated_at")) if user_info.get("updated_at") else datetime.utcnow(),
+                last_sign_in_at=parse_timestamp(user_info.get("last_sign_in_at")) if user_info.get("last_sign_in_at") else None,
+                last_active_at=parse_timestamp(user_info.get("last_active_at")) if user_info.get("last_active_at") else None
             )
             
             logger.info(f"Successfully extracted user data for {user_id}")

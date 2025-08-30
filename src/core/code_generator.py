@@ -27,6 +27,7 @@ from task_generator.prompts_raw import (
     _prompt_manim_cheatsheet
 )
 from src.rag.vector_store import RAGVectorStore
+from src.core.storage_manager import StorageManager, VideoUploadResult
 
 # Configuration constants
 DEFAULT_MAX_RETRIES = 10
@@ -55,7 +56,11 @@ class CodeGenerator:
         embedding_model: str = "azure/text-embedding-3-large", 
         use_visual_fix_code: bool = False, 
         use_langfuse: bool = True, 
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        storage_manager: Optional[StorageManager] = None,
+        enable_s3_upload: bool = False,
+        user_id: Optional[str] = None,
+        job_id: Optional[str] = None
     ) -> None:
         """Initialize the CodeGenerator.
 
@@ -73,6 +78,10 @@ class CodeGenerator:
             use_visual_fix_code (bool, optional): Whether to use visual code fixing. Defaults to False.
             use_langfuse (bool, optional): Whether to use Langfuse logging. Defaults to True.
             session_id (str, optional): Session identifier. Defaults to None.
+            storage_manager (StorageManager, optional): Custom storage manager instance.
+            enable_s3_upload (bool, optional): Enable automatic S3 uploads. Defaults to False.
+            user_id (str, optional): User ID for S3 uploads.
+            job_id (str, optional): Job ID for S3 uploads.
         """
         self.scene_model = scene_model
         self.helper_model = helper_model
@@ -84,6 +93,24 @@ class CodeGenerator:
         self.manim_docs_path = Path(manim_docs_path)
         self.use_visual_fix_code = use_visual_fix_code
         self.session_id = session_id
+        self.user_id = user_id
+        self.job_id = job_id
+        
+        # Initialize storage manager
+        if storage_manager:
+            self.storage_manager = storage_manager
+        elif enable_s3_upload:
+            # Auto-configure storage manager for S3 uploads
+            storage_mode = os.getenv('VIDEO_STORAGE_MODE', 'local_and_s3')
+            self.storage_manager = StorageManager.create_from_config(
+                storage_mode=storage_mode,
+                user_id=user_id
+            )
+        else:
+            # Local-only storage (default)
+            self.storage_manager = StorageManager.create_from_config(
+                storage_mode='local_only'
+            )
         
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)

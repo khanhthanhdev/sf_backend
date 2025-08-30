@@ -190,24 +190,37 @@ class ClerkManager:
                         if hasattr(user, 'email_addresses') and user.email_addresses:
                             email_addresses = []
                             for email_addr in user.email_addresses:
+                                verification = getattr(email_addr, 'verification', None)
                                 email_data = {
                                     "id": getattr(email_addr, 'id', None),
                                     "object": getattr(email_addr, 'object', 'email_address'),
                                     "email_address": getattr(email_addr, 'email_address', None),
                                     "verification": {
-                                        "status": getattr(getattr(email_addr, 'verification', None), 'status', 'unverified'),
-                                        "strategy": getattr(getattr(email_addr, 'verification', None), 'strategy', None),
-                                        "attempts": getattr(getattr(email_addr, 'verification', None), 'attempts', None),
-                                        "expire_at": getattr(getattr(email_addr, 'verification', None), 'expire_at', None)
+                                        "status": getattr(verification, 'status', 'unverified'),
+                                        "strategy": getattr(verification, 'strategy', None),
+                                        "attempts": getattr(verification, 'attempts', None),
+                                        "expire_at": getattr(verification, 'expire_at', None)
                                     },
                                     "linked_to": getattr(email_addr, 'linked_to', [])
                                 }
                                 email_addresses.append(email_data)
                             user_info["email_addresses"] = email_addresses
                         
+                        # Set email_verified based on verification status
+                        email_verified = False
+                        if user_info.get("email_addresses"):
+                            for email_addr in user_info["email_addresses"]:
+                                verification = email_addr.get("verification", {})
+                                if verification.get("status") == "verified":
+                                    email_verified = True
+                                    break
+                        user_info["email_verified"] = email_verified
+                        
                         return user_info
                     else:
-                        raise ClerkAuthError(f"User not found: {user_id}")
+                        # No user found from Clerk API, use fallback
+                        logger.warning(f"User not found in Clerk API for {user_id}, using fallback")
+                        raise Exception("User not found, will use fallback")
                         
                 except Exception as clerk_error:
                     logger.warning(f"Clerk API failed in development mode, using fallback: {clerk_error}")
@@ -220,20 +233,20 @@ class ClerkManager:
                         "last_name": "User",
                         "image_url": None,
                         "has_image": False,
-                        "primary_email_address_id": "test_email_id",
+                        "primary_email_address_id": "email_fallback_001",
                         "primary_phone_number_id": None,
                         "primary_web3_wallet_id": None,
-                        "password_enabled": False,
+                        "password_enabled": True,
                         "two_factor_enabled": False,
                         "email_addresses": [
                             {
-                                "id": "test_email_id",
+                                "id": "email_fallback_001",
                                 "object": "email_address",
-                                "email_address": "test@example.com",
+                                "email_address": "testuser@example.com",
                                 "verification": {
                                     "status": "verified",
-                                    "strategy": "admin",
-                                    "attempts": None,
+                                    "strategy": "email_code",
+                                    "attempts": 1,
                                     "expire_at": None
                                 },
                                 "linked_to": []
@@ -247,14 +260,15 @@ class ClerkManager:
                         "unsafe_metadata": {},
                         "delete_self_enabled": True,
                         "create_organization_enabled": True,
-                        "last_sign_in_at": int(datetime.utcnow().timestamp() * 1000),
+                        "last_sign_in_at": None,
                         "banned": False,
                         "locked": False,
                         "lockout_expires_in_seconds": None,
                         "verification_attempts_remaining": 3,
-                        "updated_at": int(datetime.utcnow().timestamp() * 1000),
-                        "created_at": int(datetime.utcnow().timestamp() * 1000),
-                        "last_active_at": int(datetime.utcnow().timestamp() * 1000)
+                        "updated_at": None,
+                        "created_at": None,
+                        "last_active_at": None,
+                        "email_verified": True  # Add this for compatibility
                     }
             else:
                 # Production mode - strict Clerk API usage
@@ -302,20 +316,31 @@ class ClerkManager:
                 if hasattr(user, 'email_addresses') and user.email_addresses:
                     email_addresses = []
                     for email_addr in user.email_addresses:
+                        verification = getattr(email_addr, 'verification', None)
                         email_data = {
                             "id": getattr(email_addr, 'id', None),
                             "object": getattr(email_addr, 'object', 'email_address'),
                             "email_address": getattr(email_addr, 'email_address', None),
                             "verification": {
-                                "status": getattr(getattr(email_addr, 'verification', None), 'status', 'unverified'),
-                                "strategy": getattr(getattr(email_addr, 'verification', None), 'strategy', None),
-                                "attempts": getattr(getattr(email_addr, 'verification', None), 'attempts', None),
-                                "expire_at": getattr(getattr(email_addr, 'verification', None), 'expire_at', None)
+                                "status": getattr(verification, 'status', 'unverified'),
+                                "strategy": getattr(verification, 'strategy', None),
+                                "attempts": getattr(verification, 'attempts', None),
+                                "expire_at": getattr(verification, 'expire_at', None)
                             },
                             "linked_to": getattr(email_addr, 'linked_to', [])
                         }
                         email_addresses.append(email_data)
                     user_info["email_addresses"] = email_addresses
+                
+                # Set email_verified based on verification status
+                email_verified = False
+                if user_info.get("email_addresses"):
+                    for email_addr in user_info["email_addresses"]:
+                        verification = email_addr.get("verification", {})
+                        if verification.get("status") == "verified":
+                            email_verified = True
+                            break
+                user_info["email_verified"] = email_verified
                 
                 return user_info
             

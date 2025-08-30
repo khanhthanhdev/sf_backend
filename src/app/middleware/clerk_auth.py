@@ -66,6 +66,10 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         Returns:
             Response from the next handler
         """
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+            
         # Check if path should be excluded from authentication
         if self._should_exclude_path(request.url.path):
             return await call_next(request)

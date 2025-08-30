@@ -24,7 +24,9 @@ from ...models.job import (
 )
 from ...models.video import VideoResponse, VideoMetadata, VideoMetadataResponse
 from ...services.video_service import VideoService
-from ...api.dependencies import get_current_user, get_video_service
+from ...services.aws_video_service import AWSVideoService
+from ...api.dependencies import get_current_user, get_video_service, get_aws_video_service
+from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/videos", tags=["videos"])
@@ -94,8 +96,7 @@ router = APIRouter(prefix="/videos", tags=["videos"])
 async def generate_video(
     request: JobCreateRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    video_service: VideoService = Depends(get_video_service),
-    redis_client: Redis = Depends(get_redis)
+    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
 ) -> JobResponse:
     """
     Create a new video generation job.
@@ -123,26 +124,14 @@ async def generate_video(
             quality=request.configuration.quality
         )
         
-        # Create job using video service
-        job = await video_service.create_video_job(
+        # Create job using AWS video service
+        job_result = await aws_video_service.create_video_job(
             request=request,
             user_id=current_user["user_info"]["id"]
         )
         
-        # Store job in Redis
-        job_key = RedisKeyManager.job_key(job.id)
-        await redis_json_set(redis_client, job_key, job.dict())
-        
-        # Add job to user's job index
-        user_jobs_key = RedisKeyManager.user_jobs_key(current_user["user_info"]["id"])
-        await redis_client.sadd(user_jobs_key, job.id)
-        
-        # Add job to processing queue
-        await redis_client.lpush(RedisKeyManager.JOB_QUEUE, job.id)
-        
-        # Cache job status for quick access
-        status_key = RedisKeyManager.job_status_key(job.id)
-        await redis_client.set(status_key, job.status.value, ex=300)  # 5 minute TTL
+        job_id = job_result.get("job_id")
+        job_status = job_result.get("status", "queued")
         
         logger.info(
             "Video generation job created successfully",
@@ -151,24 +140,20 @@ async def generate_video(
         )
         
         return JobResponse(
-            job_id=job.id,
-            status=job.status,
-            progress=job.progress,
-            created_at=job.created_at,
-            estimated_completion=job.progress.estimated_completion
+            job_id=job_id,
+            status=job_status,
+            progress=0,
+            created_at=datetime.utcnow(),
+            estimated_completion=None
         )
         
     except Exception as e:
-        logger.error(
-            "Failed to create video generation job",
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create video generation job: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "create_video_job",
+            "user_id": current_user["user_info"]["id"],
+            "topic": request.configuration.topic
+        })
+        raise handle_aws_service_error(e, "rds", "create video generation job")
 
 
 @router.get(
@@ -261,7 +246,7 @@ async def generate_video(
 async def get_job_status(
     job_id: str = FastAPIPath(..., description="Unique job identifier", example="550e8400-e29b-41d4-a716-446655440000"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    redis_client: Redis = Depends(get_redis)
+    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
 ) -> JobStatusResponse:
     """
     Get the current status of a video generation job.
@@ -281,9 +266,11 @@ async def get_job_status(
         HTTPException: If job not found or access denied
     """
     try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
+        # Get job from AWS service
+        job_data = await aws_video_service.get_job_status(
+            job_id=job_id,
+            user_id=current_user["user_info"]["id"]
+        )
         
         if not job_data:
             raise HTTPException(
@@ -291,10 +278,8 @@ async def get_job_status(
                 detail=f"Job {job_id} not found"
             )
         
-        job = Job(**job_data)
-        
         # Verify user owns this job
-        if job.user_id != current_user["user_info"]["id"]:
+        if job_data.get("user_id") != current_user["user_info"]["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: You don't own this job"
@@ -303,36 +288,31 @@ async def get_job_status(
         logger.info(
             "Retrieved job status",
             job_id=job_id,
-            status=job.status,
-            progress=job.progress.percentage,
+            status=job_data.get("status"),
+            progress=job_data.get("progress_percentage", 0),
             user_id=current_user["user_info"]["id"]
         )
         
         return JobStatusResponse(
-            job_id=job.id,
-            status=job.status,
-            progress=job.progress,
-            error=job.error,
-            metrics=job.metrics,
-            created_at=job.created_at,
-            updated_at=job.updated_at,
-            completed_at=job.completed_at
+            job_id=job_data.get("id"),
+            status=job_data.get("status"),
+            progress=job_data.get("progress_percentage", 0),
+            error=job_data.get("error_info"),
+            metrics=job_data.get("metrics"),
+            created_at=job_data.get("created_at"),
+            updated_at=job_data.get("updated_at"),
+            completed_at=job_data.get("completed_at")
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "Failed to get job status",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve job status: {str(e)}"
-        )
+        log_aws_error(e, {
+            "operation": "get_job_status",
+            "job_id": job_id,
+            "user_id": current_user["user_info"]["id"]
+        })
+        raise handle_aws_service_error(e, "rds", "get job status")
 
 
 @router.get(

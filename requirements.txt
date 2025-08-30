@@ -81,6 +81,7 @@ langchain~=0.3.14
 langchain_community~=0.3.14
 SpeechRecognition~=3.14.1
 boto3~=1.36.9
+psycopg2-binary~=2.9.9
 manim-physics~=0.4.0
 manim-ml~=0.0.24
 manim-chemistry~=0.4.4
@@ -110,6 +111,12 @@ pydantic-settings>=2.1.0
 redis>=5.0.0
 hiredis>=2.2.0  # C extension for better Redis performanc
     
+    # Async PostgreSQL driver
+asyncpg>=0.29.0
+    
+    # SQLAlchemy with async support
+sqlalchemy[asyncio]>=2.0.0
+    
     # Clerk SDK for authentication
 clerk-backend-api>=1.0.0
     
@@ -132,3 +139,4 @@ python-dateutil>=2.8.2
     
     # Async utilities
 asyncio-mqtt>=0.16.0 # If needed for real-time updates
+

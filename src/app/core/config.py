@@ -31,9 +31,11 @@ class Settings(BaseSettings):
     
     # CORS settings
     allowed_origins: str = Field(
-        default="http://localhost:3000,http://localhost:8080",
+        default="http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000",
         env="ALLOWED_ORIGINS"
     )
+    # Optional single frontend URL to auto-append (simpler than editing comma list)
+    frontend_url: Optional[str] = Field(default=None, env="FRONTEND_URL")
     allowed_methods: str = Field(
         default="GET,POST,PUT,DELETE,OPTIONS",
         env="ALLOWED_METHODS"
@@ -102,7 +104,12 @@ class Settings(BaseSettings):
     
     def get_allowed_origins(self) -> List[str]:
         """Parse CORS origins from string."""
-        return [origin.strip() for origin in self.allowed_origins.split(",")]
+        origins = [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        if self.frontend_url:
+            fe = self.frontend_url.strip()
+            if fe and fe not in origins:
+                origins.append(fe)
+        return origins
     
     def get_allowed_methods(self) -> List[str]:
         """Parse CORS methods from string."""

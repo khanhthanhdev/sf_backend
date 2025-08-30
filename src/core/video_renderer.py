@@ -24,6 +24,7 @@ from src.core.parse_video import (
     get_images_from_video,
     image_with_most_non_black_space
 )
+from src.core.storage_manager import StorageManager, VideoUploadResult
 
 
 class OptimizedVideoRenderer:
@@ -31,7 +32,8 @@ class OptimizedVideoRenderer:
 
     def __init__(self, output_dir="output", print_response=False, use_visual_fix_code=False,
                  max_concurrent_renders=4, enable_caching=True, default_quality="medium",
-                 use_gpu_acceleration=False, preview_mode=False):
+                 use_gpu_acceleration=False, preview_mode=False, storage_manager=None,
+                 enable_s3_upload=False, user_id=None, job_id=None):
         """Initialize the enhanced VideoRenderer.
 
         Args:
@@ -43,9 +45,37 @@ class OptimizedVideoRenderer:
             default_quality (str): Default render quality (low/medium/high/preview)
             use_gpu_acceleration (bool): Use GPU acceleration if available
             preview_mode (bool): Enable preview mode for faster development
+            storage_manager (StorageManager): Custom storage manager instance
+            enable_s3_upload (bool): Enable automatic S3 uploads
+            user_id (str): User ID for S3 uploads
+            job_id (str): Job ID for S3 uploads
         """
         self.output_dir = output_dir
         self.print_response = print_response
+        self.use_visual_fix_code = use_visual_fix_code
+        self.max_concurrent_renders = max_concurrent_renders
+        self.enable_caching = enable_caching
+        self.default_quality = default_quality
+        self.use_gpu_acceleration = use_gpu_acceleration
+        self.preview_mode = preview_mode
+        self.user_id = user_id
+        self.job_id = job_id
+        
+        # Initialize storage manager
+        if storage_manager:
+            self.storage_manager = storage_manager
+        elif enable_s3_upload:
+            # Auto-configure storage manager for S3 uploads
+            storage_mode = os.getenv('VIDEO_STORAGE_MODE', 'local_and_s3')
+            self.storage_manager = StorageManager.create_from_config(
+                storage_mode=storage_mode,
+                user_id=user_id
+            )
+        else:
+            # Local-only storage
+            self.storage_manager = StorageManager.create_from_config(
+                storage_mode='local_only'
+            )
         self.use_visual_fix_code = use_visual_fix_code
         self.max_concurrent_renders = max_concurrent_renders
         self.enable_caching = enable_caching
@@ -169,6 +199,30 @@ class OptimizedVideoRenderer:
                 
                 # Save to cache
                 self._save_to_cache(current_code, quality, video_path)
+                
+                # Upload to S3 if storage manager is configured
+                upload_result = None
+                if self.storage_manager:
+                    try:
+                        topic = topic or f"scene_{curr_scene}"
+                        upload_result = await self.storage_manager.store_video(
+                            local_video_path=video_path,
+                            topic=topic,
+                            scene_number=curr_scene,
+                            user_id=self.user_id,
+                            job_id=self.job_id
+                        )
+                        
+                        if upload_result.success:
+                            print(f"✅ Video uploaded successfully - S3 URL: {upload_result.s3_url}")
+                            if upload_result.streaming_url:
+                                print(f"🎬 Streaming URL: {upload_result.streaming_url}")
+                        else:
+                            print(f"⚠️ Video upload failed: {upload_result.error}")
+                            
+                    except Exception as upload_error:
+                        print(f"⚠️ Video upload failed: {upload_error}")
+                        # Continue execution even if upload fails
 
                 # Visual fix code processing
                 if use_visual_fix_code and visual_self_reflection_func and banned_reasonings:
@@ -186,7 +240,15 @@ class OptimizedVideoRenderer:
                 print(f"Scene {curr_scene} rendered successfully in {elapsed:.2f}s")
                 print(f"Average render time: {self.render_stats['average_time']:.2f}s")
                 
-                return current_code, None
+                # Return both code and upload result
+                result_info = {
+                    'code': current_code,
+                    'error': None,
+                    'video_path': video_path,
+                    'upload_result': upload_result
+                }
+                
+                return current_code, result_info
 
             except Exception as e:
                 print(f"Render attempt {retries + 1} failed: {e}")

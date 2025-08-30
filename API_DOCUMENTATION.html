@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>T2M API Documentation</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="t2m-api-documentation">T2M API Documentation</h1>
+<h2 id="overview">Overview</h2>
+<p>This document provides comprehensive documentation for the T2M (Text-to-Media) API endpoints. The API is organized into several modules: Authentication, Files, Jobs, System, and Videos.</p>
+<h2 id="base-url">Base URL</h2>
+<pre><code>https://your-api-domain.com/api/v1
+</code></pre>
+<h2 id="authentication">Authentication</h2>
+<p>Most endpoints require authentication. Include the authorization token in the request headers:</p>
+<pre><code>Authorization: Bearer &lt;your-token&gt;
+</code></pre>
+<p><strong>Public endpoints</strong> (no authentication required):</p>
+<ul>
+<li><code>GET /auth/health</code></li>
+<li><code>GET /system/health</code></li>
+</ul>
+<p><strong>Optional authentication</strong> (enhanced data for authenticated users):</p>
+<ul>
+<li>All other <code>/system/*</code> endpoints</li>
+</ul>
+<h2 id="common-response-formats">Common Response Formats</h2>
+<h3 id="success-response">Success Response</h3>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;12345&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;completed&quot;</span>
+  <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Operation completed successfully&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="error-response">Error Response</h3>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;code&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;AUTH_INVALID&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Token has expired or is malformed&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="pagination-format">Pagination Format</h3>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;items&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>...<span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;pagination&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;items_per_page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">20</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;total_items&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">150</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;total_pages&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">8</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;has_next&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;has_previous&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;next_page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;previous_page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">null</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h2 id="authentication-endpoints">Authentication Endpoints</h2>
+<h3 id="health-check">Health Check</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/health</code></li>
+<li><strong>Description</strong>: Check authentication service health</li>
+<li><strong>Authentication</strong>: Not required</li>
+<li><strong>Response</strong>: Service health status</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;healthy&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;clerk&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;healthy&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;response_time&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;45ms&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;last_check&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+  <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Authentication service health check completed&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-authentication-status">Get Authentication Status</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/status</code></li>
+<li><strong>Description</strong>: Get current user authentication status</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Authentication status and user info</li>
+<li><strong>Example Response (Authenticated)</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;authenticated&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;user_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;john@example.com&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email_verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;request_context&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;path&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;/auth/status&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;method&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;GET&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;client_ip&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;192.168.1.100&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<ul>
+<li><strong>Example Response (Not Authenticated)</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;authenticated&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;No authentication provided&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;request_context&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;path&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;/auth/status&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;method&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;GET&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;client_ip&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;192.168.1.100&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-current-user-profile">Get Current User Profile</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/me</code></li>
+<li><strong>Description</strong>: Get authenticated user's profile information</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: User profile data</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;username&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;john_doe&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;full_name&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;John Doe&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;john@example.com&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;image_url&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;https://example.com/avatar.jpg&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email_verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;created_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-01T00:00:00Z&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;last_sign_in_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<p><strong>Note</strong>: <code>created_at</code> and <code>last_sign_in_at</code> fields may be <code>null</code> if not available from the authentication provider.</p>
+<h3 id="get-user-permissions">Get User Permissions</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/permissions</code></li>
+<li><strong>Description</strong>: Get user's permissions and access levels</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: User permissions and role information</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;user_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;role&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;USER&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;permissions&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+    <span class="hljs-string">&quot;read_files&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-string">&quot;upload_files&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-string">&quot;generate_videos&quot;</span>
+  <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;access_level&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;standard&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="test-protected-endpoint">Test Protected Endpoint</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/test-protected</code></li>
+<li><strong>Description</strong>: Test endpoint for authenticated users</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Test response with user ID</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Successfully accessed protected endpoint&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;user_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="test-verified-endpoint">Test Verified Endpoint</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /auth/test-verified</code></li>
+<li><strong>Description</strong>: Test endpoint for verified users only</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Test response for verified users</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Successfully accessed verified user endpoint&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;user_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;john@example.com&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email_verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="verify-token">Verify Token</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /auth/verify</code></li>
+<li><strong>Description</strong>: Verify authentication token validity</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Token verification status</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;user_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;user_12345&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;john@example.com&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;email_verified&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Token verified successfully&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h2 id="file-management-endpoints">File Management Endpoints</h2>
+<h3 id="upload-single-file">Upload Single File</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /files/upload</code></li>
+<li><strong>Description</strong>: Upload a single file</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+<li><code>Content-Type: multipart/form-data</code></li>
+</ul>
+</li>
+<li><strong>Parameters</strong>:
+<ul>
+<li><code>file</code> (file, required): File to upload</li>
+<li><code>file_type</code> (string, optional): File type category</li>
+<li><code>subdirectory</code> (string, optional): Target subdirectory</li>
+<li><code>description</code> (string, optional): File description</li>
+</ul>
+</li>
+<li><strong>Response</strong>: File upload confirmation with file ID</li>
+</ul>
+<h3 id="batch-upload-files">Batch Upload Files</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /files/batch-upload</code></li>
+<li><strong>Description</strong>: Upload multiple files at once</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+<li><code>Content-Type: multipart/form-data</code></li>
+</ul>
+</li>
+<li><strong>Parameters</strong>:
+<ul>
+<li><code>files</code> (file[], required): Files to upload</li>
+<li><code>file_type</code> (string, optional): File type for all files</li>
+<li><code>subdirectory</code> (string, optional): Subdirectory for all files</li>
+<li><code>description</code> (string, optional): Description for all files</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Batch upload results</li>
+</ul>
+<h3 id="list-files">List Files</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files</code></li>
+<li><strong>Description</strong>: List user's files with pagination and filtering</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file_type</code></td>
+<td>string</td>
+<td>no</td>
+<td>-</td>
+<td>Filter by file type (document, image, video, audio)</td>
+</tr>
+<tr>
+<td><code>page</code></td>
+<td>integer</td>
+<td>no</td>
+<td>1</td>
+<td>Page number (≥1)</td>
+</tr>
+<tr>
+<td><code>items_per_page</code></td>
+<td>integer</td>
+<td>no</td>
+<td>20</td>
+<td>Items per page (1-100)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Response</strong>: Paginated list of files</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;items&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+      <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;file_123456&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;filename&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;document.pdf&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;size&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048576</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;file_type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;document&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;created_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+      <span class="hljs-punctuation">}</span>
+    <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;pagination&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;items_per_page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">20</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;total_items&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">150</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;total_pages&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">8</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;has_next&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-file-details">Get File Details</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}</code></li>
+<li><strong>Description</strong>: Get comprehensive file information including content details and metadata</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Complete file details</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;file_123456&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;filename&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;document.pdf&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;size&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048576</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;content_type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;application/pdf&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;file_type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;document&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;subdirectory&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;uploads/2024&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;description&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Important document&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;created_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;updated_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;download_count&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">5</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;metadata&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;pages&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;author&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;John Doe&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;creation_date&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15&quot;</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-file-metadata">Get File Metadata</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}/metadata</code></li>
+<li><strong>Description</strong>: Get file metadata and technical information only</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: File metadata only</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;content_type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;application/pdf&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;size&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2048576</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;checksum&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;sha256:abc123...&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;metadata&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;pages&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;author&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;John Doe&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;creation_date&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15&quot;</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="download-file">Download File</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}/download</code></li>
+<li><strong>Description</strong>: Download file content</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>inline</code> (boolean, default: false): Serve inline instead of attachment</li>
+</ul>
+</li>
+<li><strong>Response</strong>: File content</li>
+</ul>
+<h3 id="stream-file">Stream File</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}/stream</code></li>
+<li><strong>Description</strong>: Stream file content</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>quality</code> (string, default: &quot;auto&quot;): Stream quality</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Streamed file content</li>
+</ul>
+<h3 id="get-file-thumbnail">Get File Thumbnail</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}/thumbnail</code></li>
+<li><strong>Description</strong>: Get file thumbnail</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>size</code> (string, default: &quot;medium&quot;): Thumbnail size (small|medium|large)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Thumbnail image</li>
+</ul>
+<h3 id="get-file-analytics">Get File Analytics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/{file_id}/analytics</code></li>
+<li><strong>Description</strong>: Get file usage analytics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: File analytics data</li>
+</ul>
+<h3 id="delete-file">Delete File</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>DELETE /files/{file_id}</code></li>
+<li><strong>Description</strong>: Delete a file</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>file_id</code> (string, required): Unique file identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Deletion confirmation</li>
+</ul>
+<h3 id="get-file-statistics">Get File Statistics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/stats</code></li>
+<li><strong>Description</strong>: Get user's file statistics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: File usage statistics</li>
+</ul>
+<h3 id="cleanup-files">Cleanup Files</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /files/cleanup</code></li>
+<li><strong>Description</strong>: Cleanup files based on criteria</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+<li><code>Content-Type: application/json</code></li>
+</ul>
+</li>
+<li><strong>Request Body</strong>: File cleanup criteria</li>
+<li><strong>Response</strong>: Cleanup results</li>
+</ul>
+<h3 id="secure-file-access">Secure File Access</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /files/secure/{file_id}</code></li>
+<li><strong>Description</strong>: Access files via signed URLs</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>user_id</code> (string, required): User ID from signed URL</li>
+<li><code>expires</code> (string, required): Expiration timestamp</li>
+<li><code>signature</code> (string, required): URL signature</li>
+<li><code>file_type</code> (string, optional): File type</li>
+<li><code>inline</code> (string, default: &quot;false&quot;): Serve inline</li>
+<li><code>size</code> (string, optional): Thumbnail size</li>
+<li><code>quality</code> (string, optional): Stream quality</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Secure file access</li>
+</ul>
+<h2 id="job-management-endpoints">Job Management Endpoints</h2>
+<h3 id="list-jobs">List Jobs</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /jobs</code></li>
+<li><strong>Description</strong>: List user's jobs with pagination and filtering</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>: Pagination and filtering parameters</li>
+<li><strong>Response</strong>: Paginated list of jobs</li>
+</ul>
+<h3 id="get-job-details">Get Job Details</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /jobs/{job_id}</code></li>
+<li><strong>Description</strong>: Get comprehensive job information including status, progress, and results</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Complete job details and status</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;job_789012&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;video_generation&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;completed&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;progress&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">100</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;created_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;started_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:05Z&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;completed_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:35:30Z&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;duration&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">325</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;parameters&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;prompt&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;A beautiful sunset over mountains&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;duration&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;quality&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;1080p&quot;</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;result&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;file_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;video_456789&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;file_size&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">15728640</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;thumbnail_url&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;/videos/job_789012/thumbnail&quot;</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">null</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-job-logs">Get Job Logs</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /jobs/{job_id}/logs</code></li>
+<li><strong>Description</strong>: Get job execution logs with filtering and pagination</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>limit</code></td>
+<td>integer</td>
+<td>no</td>
+<td>100</td>
+<td>Maximum log entries (1-1000)</td>
+</tr>
+<tr>
+<td><code>offset</code></td>
+<td>integer</td>
+<td>no</td>
+<td>0</td>
+<td>Log entries to skip (≥0)</td>
+</tr>
+<tr>
+<td><code>level</code></td>
+<td>string</td>
+<td>no</td>
+<td>-</td>
+<td>Filter by log level (DEBUG, INFO, WARNING, ERROR)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Response</strong>: Job logs with metadata</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;logs&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+      <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:15Z&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;level&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;INFO&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Video processing started&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+          <span class="hljs-attr">&quot;step&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;initialization&quot;</span><span class="hljs-punctuation">,</span>
+          <span class="hljs-attr">&quot;progress&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span>
+        <span class="hljs-punctuation">}</span>
+      <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:45Z&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;level&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;INFO&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Processing frame 100/1000&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+          <span class="hljs-attr">&quot;step&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;rendering&quot;</span><span class="hljs-punctuation">,</span>
+          <span class="hljs-attr">&quot;progress&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10</span>
+        <span class="hljs-punctuation">}</span>
+      <span class="hljs-punctuation">}</span>
+    <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;total_logs&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">250</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;has_more&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="cancel-job">Cancel Job</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /jobs/{job_id}/cancel</code></li>
+<li><strong>Description</strong>: Cancel a running job</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Cancellation confirmation</li>
+</ul>
+<h3 id="delete-job">Delete Job</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>DELETE /jobs/{job_id}</code></li>
+<li><strong>Description</strong>: Delete a job and its data</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Deletion confirmation</li>
+</ul>
+<h2 id="system-monitoring-endpoints">System Monitoring Endpoints</h2>
+<h3 id="system-health-check">System Health Check</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/health</code></li>
+<li><strong>Description</strong>: Get overall system health status</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: System health metrics</li>
+</ul>
+<h3 id="system-metrics">System Metrics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/metrics</code></li>
+<li><strong>Description</strong>: Get detailed system metrics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: System performance metrics</li>
+</ul>
+<h3 id="queue-status">Queue Status</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/queue</code></li>
+<li><strong>Description</strong>: Get job queue status and statistics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Queue status and metrics</li>
+</ul>
+<h3 id="cache-information">Cache Information</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/cache</code></li>
+<li><strong>Description</strong>: Get cache status and information</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Cache metrics and status</li>
+</ul>
+<h3 id="cache-metrics">Cache Metrics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/cache/metrics</code></li>
+<li><strong>Description</strong>: Get detailed cache metrics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Cache performance metrics</li>
+</ul>
+<h3 id="cache-report">Cache Report</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/cache/report</code></li>
+<li><strong>Description</strong>: Get comprehensive cache report</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Detailed cache report</li>
+</ul>
+<h3 id="performance-summary">Performance Summary</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/performance</code></li>
+<li><strong>Description</strong>: Get system performance summary</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>hours</code> (integer, default: 1): Time range in hours</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Performance summary</li>
+</ul>
+<h3 id="connection-statistics">Connection Statistics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/connections</code></li>
+<li><strong>Description</strong>: Get connection statistics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Connection metrics</li>
+</ul>
+<h3 id="async-statistics">Async Statistics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/async</code></li>
+<li><strong>Description</strong>: Get asynchronous processing statistics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Async processing metrics</li>
+</ul>
+<h3 id="deduplication-statistics">Deduplication Statistics</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /system/deduplication</code></li>
+<li><strong>Description</strong>: Get deduplication statistics</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Deduplication metrics</li>
+</ul>
+<h3 id="invalidate-cache">Invalidate Cache</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /system/cache/invalidate</code></li>
+<li><strong>Description</strong>: Invalidate cache entries</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>pattern</code> (string, optional): Cache key pattern</li>
+<li><code>user_id</code> (string, optional): User-specific cache</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Cache invalidation results</li>
+</ul>
+<h3 id="warm-cache">Warm Cache</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /system/cache/warm</code></li>
+<li><strong>Description</strong>: Pre-warm cache with frequently accessed data</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Cache warming results</li>
+</ul>
+<h3 id="optimize-performance">Optimize Performance</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /system/optimize</code></li>
+<li><strong>Description</strong>: Trigger system performance optimization</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (optional)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Optimization results</li>
+</ul>
+<h2 id="video-processing-endpoints">Video Processing Endpoints</h2>
+<h3 id="generate-video">Generate Video</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>POST /videos/generate</code></li>
+<li><strong>Description</strong>: Create a new video generation job</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+<li><code>Content-Type: application/json</code></li>
+</ul>
+</li>
+<li><strong>Request Body</strong>: Job creation parameters</li>
+<li><strong>Response</strong>: Job creation confirmation with job ID</li>
+</ul>
+<h3 id="get-job-status">Get Job Status</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /videos/{job_id}/status</code></li>
+<li><strong>Description</strong>: Get video generation job status</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Job status and progress</li>
+</ul>
+<h3 id="download-video">Download Video</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /videos/{job_id}/download</code></li>
+<li><strong>Description</strong>: Download generated video</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>inline</code> (boolean, default: false): Serve inline instead of attachment</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Video file content</li>
+</ul>
+<h3 id="stream-video">Stream Video</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /videos/{job_id}/stream</code></li>
+<li><strong>Description</strong>: Stream generated video</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>quality</code> (string, default: &quot;auto&quot;): Stream quality (auto|720p|1080p)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Streamed video content</li>
+</ul>
+<h3 id="get-video-metadata">Get Video Metadata</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /videos/{job_id}/metadata</code></li>
+<li><strong>Description</strong>: Get comprehensive video metadata and technical information</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Detailed video metadata</li>
+<li><strong>Example Response</strong>:</li>
+</ul>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">true</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;job_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;job_789012&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;video&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;duration&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10.5</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;width&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1920</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;height&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1080</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;fps&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">30</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;bitrate&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">5000000</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;codec&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;h264&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;format&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;mp4&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;file_size&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">15728640</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;audio&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;codec&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;aac&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;bitrate&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">128000</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;sample_rate&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">44100</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;channels&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">2</span>
+    <span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;generation&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;prompt&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;A beautiful sunset over mountains&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;model&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;t2v-v2.1&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;seed&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">12345</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;created_at&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:30:00Z&quot;</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="get-video-thumbnail">Get Video Thumbnail</h3>
+<ul>
+<li><strong>Endpoint</strong>: <code>GET /videos/{job_id}/thumbnail</code></li>
+<li><strong>Description</strong>: Get video thumbnail</li>
+<li><strong>Headers</strong>:
+<ul>
+<li><code>Authorization: Bearer &lt;token&gt;</code> (required)</li>
+</ul>
+</li>
+<li><strong>Path Parameters</strong>:
+<ul>
+<li><code>job_id</code> (string, required): Unique job identifier</li>
+</ul>
+</li>
+<li><strong>Query Parameters</strong>:
+<ul>
+<li><code>size</code> (string, default: &quot;medium&quot;): Thumbnail size (small|medium|large)</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Video thumbnail image</li>
+</ul>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="error-codes">Error Codes</h3>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>HTTP Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AUTH_REQUIRED</code></td>
+<td>401</td>
+<td>Authentication required</td>
+</tr>
+<tr>
+<td><code>AUTH_INVALID</code></td>
+<td>401</td>
+<td>Invalid authentication token</td>
+</tr>
+<tr>
+<td><code>AUTH_EXPIRED</code></td>
+<td>401</td>
+<td>Authentication token expired</td>
+</tr>
+<tr>
+<td><code>PERMISSION_DENIED</code></td>
+<td>403</td>
+<td>Insufficient permissions</td>
+</tr>
+<tr>
+<td><code>RESOURCE_NOT_FOUND</code></td>
+<td>404</td>
+<td>Requested resource not found</td>
+</tr>
+<tr>
+<td><code>VALIDATION_ERROR</code></td>
+<td>400</td>
+<td>Request validation failed</td>
+</tr>
+<tr>
+<td><code>RATE_LIMIT_EXCEEDED</code></td>
+<td>429</td>
+<td>Rate limit exceeded</td>
+</tr>
+<tr>
+<td><code>SERVER_ERROR</code></td>
+<td>500</td>
+<td>Internal server error</td>
+</tr>
+<tr>
+<td><code>SERVICE_UNAVAILABLE</code></td>
+<td>503</td>
+<td>Service temporarily unavailable</td>
+</tr>
+</tbody>
+</table>
+<h3 id="error-response-examples">Error Response Examples</h3>
+<p><strong>Invalid Authentication (401)</strong></p>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;code&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;AUTH_INVALID&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Token has expired or is malformed&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<p><strong>Resource Not Found (404)</strong></p>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;code&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;RESOURCE_NOT_FOUND&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;File not found&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;File with ID &#x27;file_123456&#x27; does not exist or you don&#x27;t have access&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<p><strong>Validation Error (400)</strong></p>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;code&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;VALIDATION_ERROR&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Request validation failed&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;file_type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+        <span class="hljs-string">&quot;Invalid file type. Must be one of: document, image, video, audio&quot;</span>
+      <span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;page&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;Page must be greater than 0&quot;</span><span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<p><strong>Rate Limit Exceeded (429)</strong></p>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;success&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-keyword">false</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;error&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;code&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;RATE_LIMIT_EXCEEDED&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;message&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Rate limit exceeded&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;details&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;You have exceeded the limit of 100 uploads per hour. Try again in 45 minutes.&quot;</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h2 id="rate-limits">Rate Limits</h2>
+<ul>
+<li><strong>General API</strong>: 1000 requests per hour per user</li>
+<li><strong>File Upload</strong>: 100 uploads per hour per user</li>
+<li><strong>Video Generation</strong>: 10 jobs per hour per user</li>
+<li><strong>System Endpoints</strong>: 500 requests per hour per user</li>
+</ul>
+<h2 id="code-examples">Code Examples</h2>
+<h3 id="curl-examples">cURL Examples</h3>
+<p><strong>Upload a file</strong></p>
+<pre><code class="language-bash">curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/files/upload&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span> \
+  -F <span class="hljs-string">&quot;file=@example.txt&quot;</span> \
+  -F <span class="hljs-string">&quot;file_type=document&quot;</span> \
+  -F <span class="hljs-string">&quot;description=Sample document&quot;</span>
+</code></pre>
+<p><strong>Generate video</strong></p>
+<pre><code class="language-bash">curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/videos/generate&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span> \
+  -H <span class="hljs-string">&quot;Content-Type: application/json&quot;</span> \
+  -d <span class="hljs-string">&#x27;{
+    &quot;prompt&quot;: &quot;A beautiful sunset over mountains&quot;,
+    &quot;duration&quot;: 10,
+    &quot;quality&quot;: &quot;1080p&quot;
+  }&#x27;</span>
+</code></pre>
+<p><strong>Get job status</strong></p>
+<pre><code class="language-bash">curl -X GET <span class="hljs-string">&quot;https://api.example.com/api/v1/jobs/job_789012&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<p><strong>Get system metrics</strong></p>
+<pre><code class="language-bash">curl -X GET <span class="hljs-string">&quot;https://api.example.com/api/v1/system/metrics&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<h3 id="python-examples">Python Examples</h3>
+<p><strong>File Management</strong></p>
+<pre><code class="language-python"><span class="hljs-keyword">import</span> requests
+
+headers = {<span class="hljs-string">&quot;Authorization&quot;</span>: <span class="hljs-string">&quot;Bearer your-token-here&quot;</span>}
+base_url = <span class="hljs-string">&quot;https://api.example.com/api/v1&quot;</span>
+
+<span class="hljs-comment"># Upload file</span>
+<span class="hljs-keyword">with</span> <span class="hljs-built_in">open</span>(<span class="hljs-string">&quot;example.txt&quot;</span>, <span class="hljs-string">&quot;rb&quot;</span>) <span class="hljs-keyword">as</span> f:
+    files = {<span class="hljs-string">&quot;file&quot;</span>: f}
+    data = {<span class="hljs-string">&quot;file_type&quot;</span>: <span class="hljs-string">&quot;document&quot;</span>, <span class="hljs-string">&quot;description&quot;</span>: <span class="hljs-string">&quot;Sample document&quot;</span>}
+    response = requests.post(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/files/upload&quot;</span>, headers=headers, files=files, data=data)
+    file_data = response.json()
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;File uploaded: <span class="hljs-subst">{file_data[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;id&#x27;</span>]}</span>&quot;</span>)
+
+<span class="hljs-comment"># List files</span>
+response = requests.get(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/files&quot;</span>, headers=headers, params={<span class="hljs-string">&quot;page&quot;</span>: <span class="hljs-number">1</span>, <span class="hljs-string">&quot;items_per_page&quot;</span>: <span class="hljs-number">10</span>})
+files = response.json()
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Found <span class="hljs-subst">{files[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;pagination&#x27;</span>][<span class="hljs-string">&#x27;total_items&#x27;</span>]}</span> files&quot;</span>)
+</code></pre>
+<p><strong>Job Management</strong></p>
+<pre><code class="language-python"><span class="hljs-comment"># Get job logs</span>
+job_id = <span class="hljs-string">&quot;job_789012&quot;</span>
+response = requests.get(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/jobs/<span class="hljs-subst">{job_id}</span>/logs&quot;</span>, headers=headers, params={<span class="hljs-string">&quot;limit&quot;</span>: <span class="hljs-number">50</span>, <span class="hljs-string">&quot;level&quot;</span>: <span class="hljs-string">&quot;INFO&quot;</span>})
+logs = response.json()
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Retrieved <span class="hljs-subst">{<span class="hljs-built_in">len</span>(logs[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;logs&#x27;</span>])}</span> log entries&quot;</span>)
+
+<span class="hljs-comment"># Cancel job</span>
+response = requests.post(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/jobs/<span class="hljs-subst">{job_id}</span>/cancel&quot;</span>, headers=headers)
+<span class="hljs-keyword">if</span> response.json()[<span class="hljs-string">&#x27;success&#x27;</span>]:
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Job cancelled successfully&quot;</span>)
+</code></pre>
+<p><strong>Video Processing</strong></p>
+<pre><code class="language-python"><span class="hljs-comment"># Generate video</span>
+job_data = {
+    <span class="hljs-string">&quot;prompt&quot;</span>: <span class="hljs-string">&quot;A beautiful sunset over mountains&quot;</span>,
+    <span class="hljs-string">&quot;duration&quot;</span>: <span class="hljs-number">10</span>,
+    <span class="hljs-string">&quot;quality&quot;</span>: <span class="hljs-string">&quot;1080p&quot;</span>
+}
+response = requests.post(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/videos/generate&quot;</span>, headers=headers, json=job_data)
+job = response.json()
+job_id = job[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;job_id&#x27;</span>]
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Video generation started: <span class="hljs-subst">{job_id}</span>&quot;</span>)
+
+<span class="hljs-comment"># Check status</span>
+response = requests.get(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/videos/<span class="hljs-subst">{job_id}</span>/status&quot;</span>, headers=headers)
+status = response.json()
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Job status: <span class="hljs-subst">{status[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;status&#x27;</span>]}</span> (<span class="hljs-subst">{status[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;progress&#x27;</span>]}</span>%)&quot;</span>)
+</code></pre>
+<p><strong>System Monitoring</strong></p>
+<pre><code class="language-python"><span class="hljs-comment"># Get system metrics</span>
+response = requests.get(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/system/metrics&quot;</span>, headers=headers)
+metrics = response.json()
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;CPU usage: <span class="hljs-subst">{metrics[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;cpu_usage&#x27;</span>]}</span>%&quot;</span>)
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Memory usage: <span class="hljs-subst">{metrics[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;memory_usage&#x27;</span>]}</span>%&quot;</span>)
+
+<span class="hljs-comment"># Get queue status</span>
+response = requests.get(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/system/queue&quot;</span>, headers=headers)
+queue = response.json()
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Jobs in queue: <span class="hljs-subst">{queue[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;pending_jobs&#x27;</span>]}</span>&quot;</span>)
+</code></pre>
+<h3 id="javascript-examples">JavaScript Examples</h3>
+<p><strong>File Management</strong></p>
+<pre><code class="language-javascript"><span class="hljs-keyword">const</span> headers = {
+  <span class="hljs-title class_">Authorization</span>: <span class="hljs-string">&quot;Bearer your-token-here&quot;</span>,
+};
+<span class="hljs-keyword">const</span> baseUrl = <span class="hljs-string">&quot;https://api.example.com/api/v1&quot;</span>;
+
+<span class="hljs-comment">// Upload file</span>
+<span class="hljs-keyword">const</span> formData = <span class="hljs-keyword">new</span> <span class="hljs-title class_">FormData</span>();
+formData.<span class="hljs-title function_">append</span>(<span class="hljs-string">&quot;file&quot;</span>, fileInput.<span class="hljs-property">files</span>[<span class="hljs-number">0</span>]);
+formData.<span class="hljs-title function_">append</span>(<span class="hljs-string">&quot;file_type&quot;</span>, <span class="hljs-string">&quot;document&quot;</span>);
+formData.<span class="hljs-title function_">append</span>(<span class="hljs-string">&quot;description&quot;</span>, <span class="hljs-string">&quot;Sample document&quot;</span>);
+
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/files/upload`</span>, {
+  <span class="hljs-attr">method</span>: <span class="hljs-string">&quot;POST&quot;</span>,
+  <span class="hljs-attr">headers</span>: headers,
+  <span class="hljs-attr">body</span>: formData,
+})
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span> <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&quot;File uploaded:&quot;</span>, data.<span class="hljs-property">data</span>.<span class="hljs-property">id</span>));
+
+<span class="hljs-comment">// List files with pagination</span>
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/files?page=1&amp;items_per_page=10`</span>, {
+  <span class="hljs-attr">headers</span>: headers,
+})
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span>
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">`Found <span class="hljs-subst">${data.data.pagination.total_items}</span> files`</span>)
+  );
+</code></pre>
+<p><strong>Job Management</strong></p>
+<pre><code class="language-javascript"><span class="hljs-comment">// Get job logs</span>
+<span class="hljs-keyword">const</span> jobId = <span class="hljs-string">&quot;job_789012&quot;</span>;
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/jobs/<span class="hljs-subst">${jobId}</span>/logs?limit=50&amp;level=INFO`</span>, {
+  <span class="hljs-attr">headers</span>: headers,
+})
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span>
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">`Retrieved <span class="hljs-subst">${data.data.logs.length}</span> log entries`</span>)
+  );
+
+<span class="hljs-comment">// Cancel job</span>
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/jobs/<span class="hljs-subst">${jobId}</span>/cancel`</span>, {
+  <span class="hljs-attr">method</span>: <span class="hljs-string">&quot;POST&quot;</span>,
+  <span class="hljs-attr">headers</span>: headers,
+})
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span> {
+    <span class="hljs-keyword">if</span> (data.<span class="hljs-property">success</span>) <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&quot;Job cancelled successfully&quot;</span>);
+  });
+</code></pre>
+<p><strong>Video Processing</strong></p>
+<pre><code class="language-javascript"><span class="hljs-comment">// Generate video</span>
+<span class="hljs-keyword">const</span> jobData = {
+  <span class="hljs-attr">prompt</span>: <span class="hljs-string">&quot;A beautiful sunset over mountains&quot;</span>,
+  <span class="hljs-attr">duration</span>: <span class="hljs-number">10</span>,
+  <span class="hljs-attr">quality</span>: <span class="hljs-string">&quot;1080p&quot;</span>,
+};
+
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/videos/generate`</span>, {
+  <span class="hljs-attr">method</span>: <span class="hljs-string">&quot;POST&quot;</span>,
+  <span class="hljs-attr">headers</span>: { ...headers, <span class="hljs-string">&quot;Content-Type&quot;</span>: <span class="hljs-string">&quot;application/json&quot;</span> },
+  <span class="hljs-attr">body</span>: <span class="hljs-title class_">JSON</span>.<span class="hljs-title function_">stringify</span>(jobData),
+})
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span> {
+    <span class="hljs-keyword">const</span> jobId = data.<span class="hljs-property">data</span>.<span class="hljs-property">job_id</span>;
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&quot;Video generation started:&quot;</span>, jobId);
+
+    <span class="hljs-comment">// Poll for status</span>
+    <span class="hljs-keyword">const</span> <span class="hljs-title function_">checkStatus</span> = (<span class="hljs-params"></span>) =&gt; {
+      <span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/videos/<span class="hljs-subst">${jobId}</span>/status`</span>, { headers })
+        .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+        .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">status</span>) =&gt;</span> {
+          <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
+            <span class="hljs-string">`Status: <span class="hljs-subst">${status.data.status}</span> (<span class="hljs-subst">${status.data.progress}</span>%)`</span>
+          );
+          <span class="hljs-keyword">if</span> (status.<span class="hljs-property">data</span>.<span class="hljs-property">status</span> === <span class="hljs-string">&quot;processing&quot;</span>) {
+            <span class="hljs-built_in">setTimeout</span>(checkStatus, <span class="hljs-number">5000</span>); <span class="hljs-comment">// Check again in 5 seconds</span>
+          }
+        });
+    };
+    <span class="hljs-title function_">checkStatus</span>();
+  });
+</code></pre>
+<p><strong>System Monitoring</strong></p>
+<pre><code class="language-javascript"><span class="hljs-comment">// Get system metrics</span>
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/system/metrics`</span>, { headers })
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span> {
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">`CPU usage: <span class="hljs-subst">${data.data.cpu_usage}</span>%`</span>);
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">`Memory usage: <span class="hljs-subst">${data.data.memory_usage}</span>%`</span>);
+  });
+
+<span class="hljs-comment">// Get queue status</span>
+<span class="hljs-title function_">fetch</span>(<span class="hljs-string">`<span class="hljs-subst">${baseUrl}</span>/system/queue`</span>, { headers })
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">response</span>) =&gt;</span> response.<span class="hljs-title function_">json</span>())
+  .<span class="hljs-title function_">then</span>(<span class="hljs-function">(<span class="hljs-params">data</span>) =&gt;</span> <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">`Jobs in queue: <span class="hljs-subst">${data.data.pending_jobs}</span>`</span>));
+</code></pre>
+<h2 id="support">Support</h2>
+<p>For API support and questions, please contact:</p>
+<ul>
+<li>Email: <a href="mailto:api-support@example.com">api-support@example.com</a></li>
+<li>Documentation: <a href="https://docs.example.com">https://docs.example.com</a></li>
+<li>Status Page: <a href="https://status.example.com">https://status.example.com</a></li>
+</ul>
+<h2 id="webhooks">Webhooks</h2>
+<p>The T2M API supports webhook notifications for long-running operations like video generation.</p>
+<h3 id="webhook-configuration">Webhook Configuration</h3>
+<p>Configure webhook URLs in your account settings or via the API:</p>
+<pre><code class="language-bash">curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/webhooks&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span> \
+  -H <span class="hljs-string">&quot;Content-Type: application/json&quot;</span> \
+  -d <span class="hljs-string">&#x27;{
+    &quot;url&quot;: &quot;https://your-app.com/webhooks/t2m&quot;,
+    &quot;events&quot;: [&quot;job.completed&quot;, &quot;job.failed&quot;],
+    &quot;secret&quot;: &quot;your-webhook-secret&quot;
+  }&#x27;</span>
+</code></pre>
+<h3 id="webhook-events">Webhook Events</h3>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job.started</code></td>
+<td>Job processing has begun</td>
+</tr>
+<tr>
+<td><code>job.progress</code></td>
+<td>Job progress update (every 10%)</td>
+</tr>
+<tr>
+<td><code>job.completed</code></td>
+<td>Job completed successfully</td>
+</tr>
+<tr>
+<td><code>job.failed</code></td>
+<td>Job failed with error</td>
+</tr>
+<tr>
+<td><code>job.cancelled</code></td>
+<td>Job was cancelled</td>
+</tr>
+</tbody>
+</table>
+<h3 id="webhook-payload-example">Webhook Payload Example</h3>
+<p><strong>Job Completed</strong></p>
+<pre><code class="language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;event&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;job.completed&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2024-01-15T10:35:30Z&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;data&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;job_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;job_789012&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;type&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;video_generation&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;completed&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;result&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
+      <span class="hljs-attr">&quot;file_id&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;video_456789&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;download_url&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;https://api.example.com/api/v1/videos/job_789012/download&quot;</span><span class="hljs-punctuation">,</span>
+      <span class="hljs-attr">&quot;thumbnail_url&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;https://api.example.com/api/v1/videos/job_789012/thumbnail&quot;</span>
+    <span class="hljs-punctuation">}</span>
+  <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+<h3 id="webhook-security">Webhook Security</h3>
+<p>Verify webhook authenticity using the signature header:</p>
+<pre><code class="language-python"><span class="hljs-keyword">import</span> hmac
+<span class="hljs-keyword">import</span> hashlib
+
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">verify_webhook</span>(<span class="hljs-params">payload, signature, secret</span>):
+    expected = hmac.new(
+        secret.encode(<span class="hljs-string">&#x27;utf-8&#x27;</span>),
+        payload.encode(<span class="hljs-string">&#x27;utf-8&#x27;</span>),
+        hashlib.sha256
+    ).hexdigest()
+    <span class="hljs-keyword">return</span> hmac.compare_digest(<span class="hljs-string">f&quot;sha256=<span class="hljs-subst">{expected}</span>&quot;</span>, signature)
+
+<span class="hljs-comment"># In your webhook handler</span>
+signature = request.headers.get(<span class="hljs-string">&#x27;X-T2M-Signature&#x27;</span>)
+<span class="hljs-keyword">if</span> verify_webhook(request.body, signature, webhook_secret):
+    <span class="hljs-comment"># Process webhook</span>
+    <span class="hljs-keyword">pass</span>
+</code></pre>
+<h2 id="advanced-features">Advanced Features</h2>
+<h3 id="batch-operations">Batch Operations</h3>
+<p><strong>Batch File Upload</strong></p>
+<pre><code class="language-bash">curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/files/batch-upload&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span> \
+  -F <span class="hljs-string">&quot;files=@file1.txt&quot;</span> \
+  -F <span class="hljs-string">&quot;files=@file2.txt&quot;</span> \
+  -F <span class="hljs-string">&quot;files=@file3.txt&quot;</span> \
+  -F <span class="hljs-string">&quot;file_type=document&quot;</span>
+</code></pre>
+<h3 id="signed-urls-for-secure-access">Signed URLs for Secure Access</h3>
+<p>Generate temporary signed URLs for file access without authentication:</p>
+<pre><code class="language-python"><span class="hljs-comment"># Request signed URL</span>
+response = requests.post(<span class="hljs-string">f&quot;<span class="hljs-subst">{base_url}</span>/files/<span class="hljs-subst">{file_id}</span>/signed-url&quot;</span>,
+                        headers=headers,
+                        json={<span class="hljs-string">&quot;expires_in&quot;</span>: <span class="hljs-number">3600</span>})  <span class="hljs-comment"># 1 hour</span>
+signed_url = response.json()[<span class="hljs-string">&#x27;data&#x27;</span>][<span class="hljs-string">&#x27;url&#x27;</span>]
+
+<span class="hljs-comment"># Use signed URL (no auth required)</span>
+file_response = requests.get(signed_url)
+</code></pre>
+<h3 id="streaming-and-quality-options">Streaming and Quality Options</h3>
+<p><strong>Video Streaming with Quality Selection</strong></p>
+<pre><code class="language-bash"><span class="hljs-comment"># Stream in different qualities</span>
+curl <span class="hljs-string">&quot;https://api.example.com/api/v1/videos/job_789012/stream?quality=720p&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<p><strong>Thumbnail Sizes</strong></p>
+<pre><code class="language-bash"><span class="hljs-comment"># Get different thumbnail sizes</span>
+curl <span class="hljs-string">&quot;https://api.example.com/api/v1/videos/job_789012/thumbnail?size=large&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<h2 id="performance-optimization">Performance Optimization</h2>
+<h3 id="caching">Caching</h3>
+<p>The API implements intelligent caching. Use these endpoints to manage cache:</p>
+<pre><code class="language-bash"><span class="hljs-comment"># Warm cache for better performance</span>
+curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/system/cache/warm&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+
+<span class="hljs-comment"># Invalidate specific cache patterns</span>
+curl -X POST <span class="hljs-string">&quot;https://api.example.com/api/v1/system/cache/invalidate&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span> \
+  -d <span class="hljs-string">&quot;pattern=user:123:*&quot;</span>
+</code></pre>
+<h3 id="request-optimization">Request Optimization</h3>
+<ul>
+<li>Use pagination for large datasets</li>
+<li>Implement client-side caching for frequently accessed data</li>
+<li>Use appropriate quality settings for streaming</li>
+<li>Batch operations when possible</li>
+</ul>
+<h2 id="monitoring-and-analytics">Monitoring and Analytics</h2>
+<h3 id="system-health-monitoring">System Health Monitoring</h3>
+<pre><code class="language-bash"><span class="hljs-comment"># Check overall system health</span>
+curl <span class="hljs-string">&quot;https://api.example.com/api/v1/system/health&quot;</span>
+
+<span class="hljs-comment"># Get detailed performance metrics</span>
+curl <span class="hljs-string">&quot;https://api.example.com/api/v1/system/performance?hours=24&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<h3 id="file-analytics">File Analytics</h3>
+<p>Track file usage and performance:</p>
+<pre><code class="language-bash">curl <span class="hljs-string">&quot;https://api.example.com/api/v1/files/file_123456/analytics&quot;</span> \
+  -H <span class="hljs-string">&quot;Authorization: Bearer your-token-here&quot;</span>
+</code></pre>
+<h2 id="migration-guide">Migration Guide</h2>
+<h3 id="from-v10-to-v11">From v1.0 to v1.1</h3>
+<p><strong>Breaking Changes:</strong></p>
+<ul>
+<li><code>GET /files/{id}/info</code> is now <code>GET /files/{id}</code> (consolidated endpoints)</li>
+<li>Error response format now includes <code>details</code> field</li>
+<li>Pagination format standardized across all endpoints</li>
+</ul>
+<p><strong>New Features:</strong></p>
+<ul>
+<li>Webhook support for job notifications</li>
+<li>Batch file operations</li>
+<li>Enhanced error details</li>
+<li>Signed URL support</li>
+</ul>
+<p><strong>Migration Steps:</strong></p>
+<ol>
+<li>Update endpoint URLs for file info</li>
+<li>Update error handling to use new format</li>
+<li>Implement webhook handlers for better UX</li>
+<li>Use batch operations for improved performance</li>
+</ol>
+<h2 id="changelog">Changelog</h2>
+<h3 id="v110-2024-01-15">v1.1.0 (2024-01-15)</h3>
+<ul>
+<li>Added webhook support</li>
+<li>Introduced batch file operations</li>
+<li>Enhanced error responses with details</li>
+<li>Added signed URL generation</li>
+<li>Improved pagination format</li>
+<li>Added system performance endpoints</li>
+</ul>
+<h3 id="v100-2023-12-01">v1.0.0 (2023-12-01)</h3>
+<ul>
+<li>Initial API release</li>
+<li>Basic CRUD operations for files</li>
+<li>Video generation capabilities</li>
+<li>Job management system</li>
+<li>System monitoring endpoints</li>
+</ul>
+
+            <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+            
+        </body>
+        </html>
