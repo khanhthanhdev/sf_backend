@@ -504,5 +504,5 @@ async def verify_clerk_token(token: str) -> Dict[str, Any]:
     except ClerkAuthError as e:
         raise AuthenticationError(str(e))
     except Exception as e:
-        logger.error(f"Token verification failed: {e}")
+        logger.error("Token verification failed", extra={"error": str(e)}, exc_info=True)
         raise AuthenticationError("Token verification failed")

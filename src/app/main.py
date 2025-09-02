@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.aws_service_factory = aws_service_factory
         
     except Exception as e:
-        logger.error(f"Failed to initialize AWS Service Factory: {e}")
+        logger.error("Failed to initialize AWS Service Factory", extra={"error": str(e)}, exc_info=True)
         if settings.is_production:
             raise
         else:
@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await redis_manager.initialize()
         logger.info("Redis connection initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize Redis: {e}")
+        logger.error("Failed to initialize Redis", extra={"error": str(e)}, exc_info=True)
         # Don't fail startup for Redis issues in development
         if settings.is_production:
             raise
@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         clerk_manager.initialize()
         logger.info("Clerk authentication initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize Clerk: {e}")
+        logger.error("Failed to initialize Clerk", extra={"error": str(e)}, exc_info=True)
         # Don't fail startup for Clerk issues in development
         if settings.is_production:
             raise
@@ -109,14 +109,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await aws_service_factory.close()
             logger.info("AWS Service Factory closed")
         except Exception as e:
-            logger.error(f"Error closing AWS Service Factory: {e}")
+            logger.error("Error closing AWS Service Factory", extra={"error": str(e)}, exc_info=True)
     
     # Close Redis connections
     try:
         await redis_manager.close()
         logger.info("Redis connections closed")
     except Exception as e:
-        logger.error(f"Error closing Redis connections: {e}")
+        logger.error("Error closing Redis connections", extra={"error": str(e)}, exc_info=True)
     
     logger.info("Application shutdown completed")
 
@@ -263,7 +263,7 @@ def setup_routers(app: FastAPI) -> None:
             health_status = await aws_service_factory.health_check()
             return health_status
         except Exception as e:
-            logger.error(f"AWS health check failed: {e}")
+            logger.error("AWS health check failed", extra={"error": str(e)}, exc_info=True)
             return {
                 "status": "error",
                 "message": f"Health check failed: {str(e)}",
@@ -367,10 +367,12 @@ def setup_exception_handlers(app: FastAPI) -> None:
         """Handle unexpected exceptions."""
         logger.error(
             "Unhandled exception",
-            error_type=type(exc).__name__,
-            error_message=str(exc),
-            url=str(request.url),
-            method=request.method,
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "url": str(request.url),
+                "method": request.method,
+            },
             exc_info=True,
         )
         
@@ -421,4 +423,45 @@ if __name__ == "__main__":
         port=settings.port,
         reload=settings.reload,
         log_level=settings.log_level.lower(),
+    )
+
+
+def run_dev():
+    """Entry point for development server."""
+    import uvicorn
+    
+    logger.info(
+        "Starting development server via entry point",
+        host=settings.host,
+        port=settings.port,
+        reload=True,
+    )
+    
+    uvicorn.run(
+        "src.app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=True,
+        log_level=settings.log_level.lower(),
+    )
+
+
+def run_prod():
+    """Entry point for production server."""
+    import uvicorn
+    
+    logger.info(
+        "Starting production server via entry point",
+        host=settings.host,
+        port=settings.port,
+        reload=False,
+    )
+    
+    uvicorn.run(
+        "src.app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=False,
+        log_level=settings.log_level.lower(),
+        workers=1,  # Single worker for uvicorn; use gunicorn for multiple workers
     )

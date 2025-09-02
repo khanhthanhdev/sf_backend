@@ -62,51 +62,32 @@ async def list_jobs(
         
         logger.info(
             "Listing jobs for user",
-            user_id=user_id,
-            page=pagination.page,
-            items_per_page=pagination.items_per_page,
-            filters=filters.to_dict()
+            extra={
+                "user_id": user_id,
+                "page": pagination.page,
+                "items_per_page": pagination.items_per_page,
+                "filters": filters.to_dict()
+            }
         )
         
         # Get jobs from AWS service
-        jobs_result = await aws_job_service.get_user_jobs(
+        jobs_result = await aws_job_service.get_jobs_paginated(
             user_id=user_id,
             limit=pagination.limit,
             offset=pagination.offset,
             filters=filters.to_dict()
         )
         
-        # Convert jobs to response format
-        job_responses = []
-        for job in jobs_result.get("jobs", []):
-            job_responses.append(JobResponse(
-                job_id=job.get("id"),
-                status=job.get("status"),
-                progress=job.get("progress_percentage", 0),
-                created_at=job.get("created_at"),
-                estimated_completion=job.get("estimated_completion")
-            ))
-        
-        # Calculate pagination info
-        total_count = jobs_result["total_count"]
-        has_next = (pagination.offset + pagination.items_per_page) < total_count
-        has_previous = pagination.page > 1
-        
         logger.info(
             "Retrieved jobs for user",
-            user_id=user_id,
-            job_count=len(job_responses),
-            total_count=total_count
+            extra={
+                "user_id": user_id,
+                "job_count": len(jobs_result.jobs),
+                "total_count": jobs_result.total_count
+            }
         )
         
-        return JobListResponse(
-            jobs=job_responses,
-            total_count=total_count,
-            page=pagination.page,
-            items_per_page=pagination.items_per_page,
-            has_next=has_next,
-            has_previous=has_previous
-        )
+        return jobs_result
         
     except Exception as e:
         log_aws_error(e, {
@@ -168,9 +149,11 @@ async def cancel_job(
         
         logger.info(
             "Cancelling job",
-            job_id=job_id,
-            current_status=current_status,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "current_status": current_status,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         # Cancel job using AWS service
@@ -184,8 +167,10 @@ async def cancel_job(
         
         logger.info(
             "Job cancelled successfully",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return {
@@ -253,9 +238,11 @@ async def delete_job(
         
         logger.info(
             "Deleting job",
-            job_id=job_id,
-            status=current_status,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "status": current_status,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         # Cancel job if it's still active
@@ -273,8 +260,10 @@ async def delete_job(
         
         logger.info(
             "Job deleted successfully",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return {
@@ -342,11 +331,13 @@ async def get_job_logs(
         
         logger.info(
             "Retrieving job logs",
-            job_id=job_id,
-            limit=limit,
-            offset=offset,
-            level=level,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "limit": limit,
+                "offset": offset,
+                "level": level,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         # Get logs from AWS service
@@ -372,10 +363,12 @@ async def get_job_logs(
         
         logger.info(
             "Retrieved job logs",
-            job_id=job_id,
-            log_count=len(log_entries),
-            total_logs=total_logs,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "log_count": len(log_entries),
+                "total_logs": total_logs,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return {
@@ -451,9 +444,11 @@ async def get_job_details(
         
         logger.info(
             "Retrieved job details",
-            job_id=job_id,
-            status=job_data.get("status"),
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "status": job_data.get("status"),
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return JobStatusResponse(

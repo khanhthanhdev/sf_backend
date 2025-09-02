@@ -142,6 +142,21 @@ class AWSVideoService:
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
         try:
+            # Get the database user UUID from Clerk user ID
+            async with self.db_manager.get_session() as session:
+                from sqlalchemy import select
+                from ..database.models import User as UserDB
+                
+                result = await session.execute(
+                    select(UserDB).where(UserDB.clerk_user_id == user_id)
+                )
+                user_db = result.scalar_one_or_none()
+                
+                if not user_db:
+                    raise ValueError(f"User with Clerk ID {user_id} not found in database")
+                
+                db_user_id = user_db.id  # Store the database UUID
+            
             # Generate S3 key with organized structure
             bucket = self.config.buckets['videos']
             key = f"users/{user_id}/jobs/{job_id}/videos/scene_{scene_number:03d}/output.mp4"
@@ -200,7 +215,8 @@ class AWSVideoService:
             
             # Store video metadata in database
             video_db_metadata = await self._store_video_metadata_in_db(
-                user_id=user_id,
+                user_id=user_id,  # Pass Clerk ID for now, method will handle conversion
+                db_user_id=db_user_id,  # Pass the database UUID
                 job_id=job_id,
                 scene_number=scene_number,
                 bucket=bucket,
@@ -211,9 +227,9 @@ class AWSVideoService:
                 upload_duration=upload_duration
             )
             
-            # Generate streaming URL
+            # Generate streaming URL using database user UUID
             streaming_url = await self.generate_video_streaming_url(
-                video_db_metadata.id, user_id
+                video_db_metadata.id, str(db_user_id)
             )
             
             return {
@@ -912,13 +928,35 @@ class AWSVideoService:
         """Store video metadata in database."""
         try:
             async with self.db_manager.get_session() as session:
+                # Use the database UUID passed from the calling method
+                db_user_id = kwargs.get('db_user_id')
+                if not db_user_id:
+                    # Fallback: Get the database user UUID from Clerk user ID
+                    from sqlalchemy import select
+                    from ..database.models import User as UserDB
+                    
+                    clerk_user_id = kwargs['user_id']
+                    result = await session.execute(
+                        select(UserDB).where(UserDB.clerk_user_id == clerk_user_id)
+                    )
+                    user_db = result.scalar_one_or_none()
+                    
+                    if not user_db:
+                        raise ValueError(f"User with Clerk ID {clerk_user_id} not found in database")
+                    
+                    db_user_id = user_db.id
+                
+                # Create stored filename for the S3 key
+                stored_filename = f"scene_{kwargs['scene_number']:03d}_output.mp4"
+                
                 # Create FileMetadataDB instance
                 video_metadata = FileMetadataDB(
                     id=str(uuid.uuid4()),
-                    user_id=kwargs['user_id'],
+                    user_id=db_user_id,  # Use the database UUID, not Clerk ID
                     job_id=kwargs['job_id'],
                     file_type='video',
-                    original_filename=f"scene_{kwargs['scene_number']:03d}_output.mp4",
+                    original_filename=stored_filename,
+                    stored_filename=stored_filename,  # Add required field
                     s3_bucket=kwargs['bucket'],
                     s3_key=kwargs['key'],
                     file_size=kwargs['file_size'],
@@ -938,17 +976,18 @@ class AWSVideoService:
                 await session.execute(
                     text("""
                     INSERT INTO file_metadata 
-                    (id, user_id, job_id, file_type, original_filename, s3_bucket, s3_key, 
-                     file_size, content_type, metadata, created_at)
-                    VALUES (:id, :user_id, :job_id, :file_type, :filename, :bucket, :key, 
-                            :file_size, :content_type, :metadata, :created_at)
+                    (id, user_id, job_id, file_type, original_filename, stored_filename, 
+                     s3_bucket, s3_key, file_size, content_type, file_metadata, created_at)
+                    VALUES (:id, :user_id, :job_id, :file_type, :original_filename, :stored_filename,
+                            :bucket, :key, :file_size, :content_type, :metadata, :created_at)
                     """),
                     {
                         "id": video_metadata.id,
                         "user_id": video_metadata.user_id,
                         "job_id": video_metadata.job_id,
                         "file_type": video_metadata.file_type,
-                        "filename": video_metadata.original_filename,
+                        "original_filename": video_metadata.original_filename,
+                        "stored_filename": video_metadata.stored_filename,
                         "bucket": video_metadata.s3_bucket,
                         "key": video_metadata.s3_key,
                         "file_size": video_metadata.file_size,
@@ -993,12 +1032,16 @@ class AWSVideoService:
         """Store thumbnail metadata in database."""
         try:
             async with self.db_manager.get_session() as session:
+                # Generate stored filename for thumbnail
+                stored_filename = kwargs['filename']
+                
                 thumbnail_metadata = FileMetadataDB(
                     id=str(uuid.uuid4()),
                     user_id=kwargs.get('user_id', ''),  # Will be populated from video metadata
                     job_id=kwargs.get('job_id', ''),    # Will be populated from video metadata
                     file_type='thumbnail',
                     original_filename=kwargs['filename'],
+                    stored_filename=stored_filename,  # Add required field
                     s3_bucket=kwargs['bucket'],
                     s3_key=kwargs['key'],
                     file_size=kwargs['file_size'],
@@ -1015,17 +1058,18 @@ class AWSVideoService:
                 await session.execute(
                     text("""
                     INSERT INTO file_metadata 
-                    (id, user_id, job_id, file_type, original_filename, s3_bucket, s3_key, 
-                     file_size, content_type, metadata, created_at)
-                    VALUES (:id, :user_id, :job_id, :file_type, :filename, :bucket, :key, 
-                            :file_size, :content_type, :metadata, :created_at)
+                    (id, user_id, job_id, file_type, original_filename, stored_filename,
+                     s3_bucket, s3_key, file_size, content_type, file_metadata, created_at)
+                    VALUES (:id, :user_id, :job_id, :file_type, :original_filename, :stored_filename,
+                            :bucket, :key, :file_size, :content_type, :metadata, :created_at)
                     """),
                     {
                         "id": thumbnail_metadata.id,
                         "user_id": thumbnail_metadata.user_id,
                         "job_id": thumbnail_metadata.job_id,
                         "file_type": thumbnail_metadata.file_type,
-                        "filename": thumbnail_metadata.original_filename,
+                        "original_filename": thumbnail_metadata.original_filename,
+                        "stored_filename": thumbnail_metadata.stored_filename,
                         "bucket": thumbnail_metadata.s3_bucket,
                         "key": thumbnail_metadata.s3_key,
                         "file_size": thumbnail_metadata.file_size,
@@ -1050,10 +1094,10 @@ class AWSVideoService:
                 await session.execute(
                     text("""
                     UPDATE file_metadata 
-                    SET metadata = jsonb_set(
-                        COALESCE(metadata, '{}'), 
+                    SET file_metadata = jsonb_set(
+                        COALESCE(file_metadata, '{}'), 
                         '{view_count}', 
-                        to_jsonb(COALESCE((metadata->>'view_count')::int, 0) + 1)
+                        to_jsonb(COALESCE((file_metadata->>'view_count')::int, 0) + 1)
                     )
                     WHERE id = :video_id AND file_type = 'video'
                     """),

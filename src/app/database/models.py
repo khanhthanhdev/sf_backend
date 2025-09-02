@@ -118,6 +118,9 @@ class Job(Base):
     # Performance metrics
     metrics = Column(JSON, nullable=True)
     
+    # Result data
+    result_url = Column(String(500), nullable=True)
+    
     # Timestamps
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

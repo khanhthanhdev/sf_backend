@@ -84,12 +84,12 @@ class ConfigurationManager(IConfigurationManager):
     def get_default_configuration(self) -> LLMConfiguration:
         """Get default configuration."""
         return LLMConfiguration(
-            provider='OpenAI',
-            model='gpt-4',
+            provider='Google Gemini',
+            model='gemini/gemini-2.5-pro',
             api_key='',
             temperature=0.7,
             max_retries=3,
-            helper_model='gemini/gemini-2.5-flash-preview-04-17',
+            helper_model='gemini/gemini-2.5-pro',
             use_rag=True,
             use_visual_fix_code=False,
             use_context_learning=True,

@@ -6,6 +6,8 @@ including job creation, status monitoring, file downloads, and metadata retrieva
 """
 
 import logging
+import asyncio
+import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -19,17 +21,33 @@ from pathlib import Path
 from ...core.redis import get_redis, RedisKeyManager, redis_json_get, redis_json_set
 from ...core.auth import verify_clerk_token, AuthenticationError
 from ...models.job import (
-    JobCreateRequest, JobResponse, JobStatusResponse, 
+    JobCreateRequest, JobStatusResponse, 
     Job, JobStatus, JobConfiguration, JobProgress
 )
-from ...models.video import VideoResponse, VideoMetadata, VideoMetadataResponse
+from ...schemas.responses import JobResponse
+from ...models.video import VideoResponse, VideoMetadata, VideoMetadataResponse, VideoStatus
 from ...services.video_service import VideoService
-from ...services.aws_video_service import AWSVideoService
-from ...api.dependencies import get_current_user, get_video_service, get_aws_video_service
-from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
+from ...services.enhanced_video_service import EnhancedVideoService
+from ...api.dependencies import get_current_user, get_video_service, get_enhanced_video_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/videos", tags=["videos"])
+
+
+def is_job_completed(job: Job) -> bool:
+    """Check if a job is completed, handling various status formats."""
+    if hasattr(job.status, 'value'):
+        return job.status.value.lower() == "completed"
+    return str(job.status).lower() == "completed"
+
+
+def check_job_completion(job: Job, job_id: str) -> None:
+    """Raise HTTPException if job is not completed."""
+    if not is_job_completed(job):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job is not completed. Current status: {job.status}"
+        )
 
 
 @router.post(
@@ -96,19 +114,19 @@ router = APIRouter(prefix="/videos", tags=["videos"])
 async def generate_video(
     request: JobCreateRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
+    enhanced_video_service: EnhancedVideoService = Depends(get_enhanced_video_service)
 ) -> JobResponse:
     """
-    Create a new video generation job.
+    Create a new video generation job and immediately start processing.
     
     This endpoint accepts a video generation request with topic, context,
-    and optional parameters, then queues the job for processing.
+    and optional parameters, creates the job, and immediately triggers
+    the end-to-end video generation workflow using the core pipeline.
     
     Args:
         request: Video generation request with configuration
         current_user: Authenticated user information
-        video_service: Video service dependency
-        redis_client: Redis client dependency
+        enhanced_video_service: Enhanced video service with core pipeline integration
         
     Returns:
         JobResponse with job ID, status, and metadata
@@ -118,42 +136,220 @@ async def generate_video(
     """
     try:
         logger.info(
-            "Creating video generation job",
-            user_id=current_user["user_info"]["id"],
-            topic=request.configuration.topic,
-            quality=request.configuration.quality
+            "Creating video generation job with core pipeline",
+            extra={
+                "user_id": current_user["user_info"]["id"],
+                "topic": request.configuration.topic,
+                "quality": request.configuration.quality
+            }
         )
         
-        # Create job using AWS video service
-        job_result = await aws_video_service.create_video_job(
+        # Create job using enhanced video service
+        job = await enhanced_video_service.create_video_job(
             request=request,
-            user_id=current_user["user_info"]["id"]
+            user_id=current_user["user_info"]["id"],
+            user_info=current_user["user_info"]
         )
         
-        job_id = job_result.get("job_id")
-        job_status = job_result.get("status", "queued")
+        # Immediately trigger the core video generation pipeline
+        asyncio.create_task(
+            enhanced_video_service.process_video_with_core_pipeline(job.id)
+        )
         
         logger.info(
-            "Video generation job created successfully",
-            job_id=job.id,
-            user_id=current_user["user_info"]["id"]
+            "Video generation job created and core pipeline started",
+            extra={
+                "job_id": job.id,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return JobResponse(
-            job_id=job_id,
-            status=job_status,
-            progress=0,
-            created_at=datetime.utcnow(),
-            estimated_completion=None
+            job_id=job.id,
+            status=job.status,
+            priority=job.priority,
+            progress=job.progress if job.progress else JobProgress(
+                percentage=5.0,  # Start at 5% to show processing has begun
+                current_stage="initializing",
+                stages_completed=[],
+                estimated_completion=None
+            ),
+            created_at=job.created_at,
+            estimated_completion=job.progress.estimated_completion if job.progress else None
         )
         
     except Exception as e:
-        log_aws_error(e, {
-            "operation": "create_video_job",
-            "user_id": current_user["user_info"]["id"],
-            "topic": request.configuration.topic
-        })
-        raise handle_aws_service_error(e, "rds", "create video generation job")
+        logger.error(
+            "Failed to create video generation job",
+            extra={
+                "user_id": current_user["user_info"]["id"],
+                "topic": request.configuration.topic,
+                "error": str(e)
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create video generation job: {str(e)}"
+        )
+
+
+@router.get(
+    "/jobs/{job_id}/video-url",
+    summary="Get Video URL",
+    description="Get the streaming URL for a completed video job",
+    operation_id="getVideoUrl",
+    responses={
+        200: {
+            "description": "Video URL retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "job_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "completed",
+                        "video_url": "/api/v1/videos/jobs/550e8400-e29b-41d4-a716-446655440000/stream",
+                        "download_url": "/api/v1/videos/jobs/550e8400-e29b-41d4-a716-446655440000/download",
+                        "thumbnail_url": "/api/v1/videos/jobs/550e8400-e29b-41d4-a716-446655440000/thumbnail",
+                        "metadata": {
+                            "duration": 30,
+                            "file_size": 1024000,
+                            "quality": "medium",
+                            "format": "mp4"
+                        }
+                    }
+                }
+            }
+        },
+        404: {
+            "description": "Job or video not found"
+        },
+        409: {
+            "description": "Job not completed yet"
+        }
+    }
+)
+async def get_video_url(
+    job_id: str = FastAPIPath(..., description="Unique job identifier"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    video_service: VideoService = Depends(get_video_service)
+) -> Dict[str, Any]:
+    """
+    Get video URL and metadata for a completed job.
+    
+    This endpoint is designed for frontend integration to easily get
+    the video streaming URL and related information.
+    
+    Args:
+        job_id: Unique job identifier
+        current_user: Authenticated user information
+        video_service: VideoService dependency
+        
+    Returns:
+        Dict with video URLs and metadata
+        
+    Raises:
+        HTTPException: If job not found, not completed, or access denied
+    """
+    try:
+        # Get job from AWS RDS database using VideoService
+        job = await video_service.get_job_status(job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found"
+            )
+        
+        # Verify user owns this job
+        if job.user_id != current_user["user_info"]["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You don't own this job"
+            )
+        
+        # Check if job is completed using the proper helper function
+        if not is_job_completed(job):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": f"Job is not completed yet. Current status: {job.status}",
+                    "status": str(job.status).lower(),
+                    "progress": job.progress.percentage if job.progress else 0,
+                    "current_stage": job.progress.current_stage if job.progress else "unknown"
+                }
+            )
+        
+        # Get the video URL from the job's result_url field (stored in AWS RDS)
+        video_url = job.result_url
+        
+        if not video_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video URL not found for this job"
+            )
+        
+        # Extract metadata from job metrics if available
+        video_metadata = {
+            "duration": 0,
+            "quality": "medium",
+            "format": "mp4",
+            "file_size": 0,  # Default file size
+            "demo": False,
+            "created_at": None
+        }
+        
+        if job.metrics and 'result_data' in job.metrics:
+            result_data = job.metrics['result_data']
+            video_metadata.update({
+                "duration": result_data.get("duration", 0),
+                "quality": result_data.get("quality", "medium"),
+                "format": "mp4",  # Default format
+                "file_size": result_data.get("file_size", 0),
+                "demo": result_data.get("demo", False),
+                "created_at": result_data.get("created_at")
+            })
+        
+        # Construct response using actual AWS data
+        response_data = {
+            "job_id": job_id,
+            "status": job.status,
+            "video_url": video_url,  # Direct streaming URL from AWS S3
+            "download_url": video_url,  # Same URL can be used for download
+            "thumbnail_url": f"/api/v1/videos/jobs/{job_id}/thumbnail",  # Placeholder for thumbnail
+            "metadata": video_metadata
+        }
+        
+        # Add demo flag if it's a demo video
+        if video_metadata.get("demo"):
+            response_data["is_demo"] = True
+        
+        logger.info(
+            "Retrieved video URL",
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "video_url": response_data["video_url"]
+            }
+        )
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to get video URL",
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get video URL: {str(e)}"
+        )
 
 
 @router.get(
@@ -246,7 +442,7 @@ async def generate_video(
 async def get_job_status(
     job_id: str = FastAPIPath(..., description="Unique job identifier", example="550e8400-e29b-41d4-a716-446655440000"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
+    video_service: VideoService = Depends(get_video_service)
 ) -> JobStatusResponse:
     """
     Get the current status of a video generation job.
@@ -257,7 +453,7 @@ async def get_job_status(
     Args:
         job_id: Unique job identifier
         current_user: Authenticated user information
-        redis_client: Redis client dependency
+        video_service: Video service dependency
         
     Returns:
         JobStatusResponse with current job status and progress
@@ -266,20 +462,17 @@ async def get_job_status(
         HTTPException: If job not found or access denied
     """
     try:
-        # Get job from AWS service
-        job_data = await aws_video_service.get_job_status(
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"]
-        )
+        # Get job from database
+        job = await video_service.get_job_status(job_id)
         
-        if not job_data:
+        if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
         
-        # Verify user owns this job
-        if job_data.get("user_id") != current_user["user_info"]["id"]:
+        # Verify user owns this job (compare Clerk IDs)
+        if job.user_id != current_user["user_info"]["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: You don't own this job"
@@ -287,32 +480,44 @@ async def get_job_status(
         
         logger.info(
             "Retrieved job status",
-            job_id=job_id,
-            status=job_data.get("status"),
-            progress=job_data.get("progress_percentage", 0),
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "status": job.status.value if hasattr(job.status, 'value') else str(job.status),
+                "progress": job.progress.percentage if job.progress else 0,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         return JobStatusResponse(
-            job_id=job_data.get("id"),
-            status=job_data.get("status"),
-            progress=job_data.get("progress_percentage", 0),
-            error=job_data.get("error_info"),
-            metrics=job_data.get("metrics"),
-            created_at=job_data.get("created_at"),
-            updated_at=job_data.get("updated_at"),
-            completed_at=job_data.get("completed_at")
+            job_id=job.id,
+            status=job.status,
+            progress=job.progress if job.progress else JobProgress(
+                percentage=0.0,
+                current_stage="queued",
+                stages_completed=[],
+                estimated_completion=None
+            ),
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            completed_at=job.completed_at
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        log_aws_error(e, {
-            "operation": "get_job_status",
-            "job_id": job_id,
-            "user_id": current_user["user_info"]["id"]
-        })
-        raise handle_aws_service_error(e, "rds", "get job status")
+        logger.error(
+            "Failed to get job status",
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get job status: {str(e)}"
+        )
 
 
 @router.get(
@@ -457,148 +662,72 @@ async def download_video(
         
         logger.info(
             "Serving video download",
-            job_id=job_id,
-            video_id=video.id,
-            filename=video.filename,
-            user_id=current_user["user_info"]["id"],
-            inline=inline
+            extra={
+                "job_id": job_id,
+                "video_id": video.id,
+                "filename": video.filename,
+                "user_id": current_user["user_info"]["id"],
+                "inline": inline
+            }
         )
         
         # Track file access for analytics
-        from ...utils.file_cache import track_file_access
-        await track_file_access(
-            file_id=f"job_{job_id}",
-            user_id=current_user["user_info"]["id"],
-            access_type="download"
-        )
+        try:
+            from ...utils.file_cache import track_file_access
+            await track_file_access(
+                file_id=f"job_{job_id}",
+                user_id=current_user["user_info"]["id"],
+                access_type="download"
+            )
+        except ImportError:
+            # File cache utility not available, skip tracking
+            logger.debug("File cache utility not available, skipping access tracking")
         
         # Use enhanced file serving with range request support and caching
-        from ...utils.file_serving import serve_file_secure
-        
-        return await serve_file_secure(
-            file_path=str(file_path),
-            file_type="video",
-            original_filename=video.filename,
-            request=request,
-            inline=inline,
-            enable_caching=True
-        )
+        try:
+            from ...utils.file_serving import serve_file_secure
+            
+            return await serve_file_secure(
+                file_path=str(file_path),
+                file_type="video",
+                original_filename=video.filename,
+                request=request,
+                inline=inline,
+                enable_caching=True
+            )
+        except ImportError:
+            # Enhanced file serving not available, use basic file response
+            logger.debug("Enhanced file serving not available, using basic file response")
+            
+            # Basic file serving fallback
+            disposition = "inline" if inline else "attachment"
+            filename = video.filename
+            
+            return FileResponse(
+                path=str(file_path),
+                filename=filename,
+                media_type="video/mp4",
+                headers={
+                    "Content-Disposition": f"{disposition}; filename=\"{filename}\"",
+                    "Accept-Ranges": "bytes"
+                }
+            )
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
             "Failed to download video",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download video: {str(e)}"
-        )
-
-
-@router.get("/jobs/{job_id}/metadata", response_model=VideoMetadataResponse)
-async def get_video_metadata(
-    job_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    redis_client: Redis = Depends(get_redis)
-) -> VideoMetadataResponse:
-    """
-    Get comprehensive metadata for a video generation job.
-    
-    This endpoint returns detailed video metadata including file information,
-    processing metrics, thumbnails, and subtitle tracks.
-    
-    Args:
-        job_id: Unique job identifier
-        current_user: Authenticated user information
-        redis_client: Redis client dependency
-        
-    Returns:
-        VideoMetadataResponse with complete video metadata
-        
-    Raises:
-        HTTPException: If job not found or access denied
-    """
-    try:
-        # Get job from Redis
-        job_key = RedisKeyManager.job_key(job_id)
-        job_data = await redis_json_get(redis_client, job_key)
-        
-        if not job_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Job {job_id} not found"
-            )
-        
-        job = Job(**job_data)
-        
-        # Verify user owns this job
-        if job.user_id != current_user["user_info"]["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You don't own this job"
-            )
-        
-        # Get video metadata if job is completed
-        video_metadata = None
-        download_url = None
-        thumbnail_urls = []
-        streaming_url = None
-        
-        if job.status == JobStatus.COMPLETED:
-            video_key = RedisKeyManager.video_key(f"job_{job_id}")
-            video_data = await redis_json_get(redis_client, video_key)
-            
-            if video_data:
-                video_metadata = VideoMetadata(**video_data)
-                
-                # Generate download URL
-                download_url = f"/api/v1/videos/jobs/{job_id}/download"
-                
-                # Generate thumbnail URLs
-                thumbnail_urls = [
-                    f"/api/v1/videos/thumbnails/{thumb.id}"
-                    for thumb in video_metadata.thumbnails
-                ]
-                
-                # Generate streaming URL (if supported)
-                streaming_url = f"/api/v1/videos/jobs/{job_id}/stream"
-                
-                # Update view count
-                video_metadata.increment_view_count()
-                await redis_json_set(redis_client, video_key, video_metadata.dict())
-        
-        logger.info(
-            "Retrieved video metadata",
-            job_id=job_id,
-            has_video=video_metadata is not None,
-            user_id=current_user["user_info"]["id"]
-        )
-        
-        return VideoMetadataResponse(
-            video=video_metadata,
-            download_url=download_url,
-            thumbnail_urls=thumbnail_urls,
-            streaming_url=streaming_url
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            "Failed to get video metadata",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve video metadata: {str(e)}"
         )
 
 
@@ -678,41 +807,66 @@ async def stream_video(
         
         logger.info(
             "Serving video stream",
-            job_id=job_id,
-            video_id=video.id,
-            filename=video.filename,
-            quality=quality,
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "video_id": video.id,
+                "filename": video.filename,
+                "quality": quality,
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         # Track file access for analytics
-        from ...utils.file_cache import track_file_access
-        await track_file_access(
-            file_id=f"job_{job_id}",
-            user_id=current_user["user_info"]["id"],
-            access_type="stream"
-        )
+        try:
+            from ...utils.file_cache import track_file_access
+            await track_file_access(
+                file_id=f"job_{job_id}",
+                user_id=current_user["user_info"]["id"],
+                access_type="stream"
+            )
+        except ImportError:
+            logger.debug("File cache utility not available, skipping access tracking")
         
         # Use enhanced file serving with inline=True for streaming
-        from ...utils.file_serving import serve_file_secure
-        
-        return await serve_file_secure(
-            file_path=str(file_path),
-            file_type="video",
-            original_filename=video.filename,
-            request=request,
-            inline=True,  # Always serve inline for streaming
-            enable_caching=True
-        )
+        try:
+            from ...utils.file_serving import serve_file_secure
+            
+            return await serve_file_secure(
+                file_path=str(file_path),
+                file_type="video",
+                original_filename=video.filename,
+                request=request,
+                inline=True,  # Always serve inline for streaming
+                enable_caching=True
+            )
+        except ImportError:
+            # Enhanced file serving not available, use basic streaming response
+            logger.debug("Enhanced file serving not available, using basic streaming")
+            
+            async def file_generator():
+                async with aiofiles.open(file_path, 'rb') as f:
+                    while chunk := await f.read(8192):
+                        yield chunk
+            
+            return StreamingResponse(
+                file_generator(),
+                media_type="video/mp4",
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{video.filename}\"",
+                    "Accept-Ranges": "bytes"
+                }
+            )
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
             "Failed to stream video",
-            job_id=job_id,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
             exc_info=True
         )
         raise HTTPException(
@@ -788,9 +942,13 @@ async def get_video_thumbnail(
         video = VideoMetadata(**video_data)
         
         # Check for cached thumbnail path
-        from ...utils.file_cache import FileCacheManager
-        cache_manager = FileCacheManager(redis_client)
-        thumbnail_path = await cache_manager.get_cached_thumbnail_path(f"job_{job_id}", size)
+        thumbnail_path = None
+        try:
+            from ...utils.file_cache import FileCacheManager
+            cache_manager = FileCacheManager(redis_client)
+            thumbnail_path = await cache_manager.get_cached_thumbnail_path(f"job_{job_id}", size)
+        except ImportError:
+            logger.debug("File cache utility not available")
         
         if not thumbnail_path:
             # Generate thumbnail path based on video file
@@ -798,8 +956,13 @@ async def get_video_thumbnail(
             thumbnail_filename = f"{video_path.stem}_thumb_{size}.jpg"
             thumbnail_path = video_path.parent / "thumbnails" / thumbnail_filename
             
-            # Cache the thumbnail path
-            await cache_manager.cache_thumbnail_path(f"job_{job_id}", size, str(thumbnail_path))
+            # Cache the thumbnail path if caching is available
+            try:
+                from ...utils.file_cache import FileCacheManager
+                cache_manager = FileCacheManager(redis_client)
+                await cache_manager.cache_thumbnail_path(f"job_{job_id}", size, str(thumbnail_path))
+            except ImportError:
+                pass
         else:
             thumbnail_path = Path(thumbnail_path)
         
@@ -812,44 +975,177 @@ async def get_video_thumbnail(
         
         logger.info(
             "Serving video thumbnail",
-            job_id=job_id,
-            size=size,
-            thumbnail_path=str(thumbnail_path),
-            user_id=current_user["user_info"]["id"]
+            extra={
+                "job_id": job_id,
+                "size": size,
+                "thumbnail_path": str(thumbnail_path),
+                "user_id": current_user["user_info"]["id"]
+            }
         )
         
         # Track file access
-        from ...utils.file_cache import track_file_access
-        await track_file_access(
-            file_id=f"job_{job_id}_thumb_{size}",
-            user_id=current_user["user_info"]["id"],
-            access_type="thumbnail"
-        )
+        try:
+            from ...utils.file_cache import track_file_access
+            await track_file_access(
+                file_id=f"job_{job_id}_thumb_{size}",
+                user_id=current_user["user_info"]["id"],
+                access_type="thumbnail"
+            )
+        except ImportError:
+            pass
         
         # Use enhanced file serving for thumbnail
-        from ...utils.file_serving import serve_file_secure
-        
-        return await serve_file_secure(
-            file_path=str(thumbnail_path),
-            file_type="image",
-            original_filename=thumbnail_path.name,
-            request=request,
-            inline=True,  # Always serve thumbnails inline
-            enable_caching=True
-        )
+        try:
+            from ...utils.file_serving import serve_file_secure
+            
+            return await serve_file_secure(
+                file_path=str(thumbnail_path),
+                file_type="image",
+                original_filename=thumbnail_path.name,
+                request=request,
+                inline=True,  # Always serve thumbnails inline
+                enable_caching=True
+            )
+        except ImportError:
+            # Enhanced file serving not available, use basic file response
+            return FileResponse(
+                path=str(thumbnail_path),
+                filename=thumbnail_path.name,
+                media_type="image/jpeg",
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{thumbnail_path.name}\"",
+                    "Cache-Control": "public, max-age=3600"
+                }
+            )
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
             "Failed to get video thumbnail",
-            job_id=job_id,
-            size=size,
-            user_id=current_user["user_info"]["id"],
-            error=str(e),
+            extra={
+                "job_id": job_id,
+                "size": size,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get video thumbnail: {str(e)}"
+        )
+
+
+@router.get("/jobs/{job_id}/metadata", response_model=VideoMetadataResponse)
+async def get_video_metadata(
+    job_id: str = FastAPIPath(..., description="Unique job identifier"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    video_service: VideoService = Depends(get_video_service)
+) -> VideoMetadataResponse:
+    """
+    Get comprehensive metadata for a video generation job.
+    
+    This endpoint returns detailed video metadata including file information,
+    processing metrics, thumbnails, and subtitle tracks.
+    
+    Args:
+        job_id: Unique job identifier
+        current_user: Authenticated user information
+        video_service: VideoService dependency
+        
+    Returns:
+        VideoMetadataResponse with complete video metadata
+        
+    Raises:
+        HTTPException: If job not found or access denied
+    """
+    try:
+        # Get job from AWS RDS database using VideoService
+        job = await video_service.get_job_status(job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found"
+            )
+        
+        # Verify user owns this job
+        if job.user_id != current_user["user_info"]["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You don't own this job"
+            )
+        
+        # Check if job is completed
+        if not is_job_completed(job):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Job is not completed yet. Current status: {job.status}"
+            )
+        
+        # Build metadata response from job data
+        file_prefix = job.configuration.topic.replace(' ', '_').lower()
+        video_filename = f"{file_prefix}_combined.mp4"
+        
+        # Extract metadata from job metrics if available
+        duration = None  # Set to None initially
+        file_size = 1  # Set minimum valid value as default
+        quality = getattr(job.configuration, 'quality', 'medium')
+        
+        if job.metrics and 'result_data' in job.metrics:
+            result_data = job.metrics['result_data']
+            duration = result_data.get("duration") or None  # Only set if > 0
+            file_size = max(result_data.get("file_size", 1), 1)  # Ensure minimum 1
+        
+        # Create metadata response using the expected structure
+        video_metadata = VideoMetadata(
+            id=str(uuid.uuid4()),
+            job_id=job_id,
+            user_id=job.user_id,
+            filename=video_filename,
+            file_path=job.result_url or "",
+            file_size=file_size,
+            duration_seconds=duration,
+            width=1920,  # Default width
+            height=1080,  # Default height
+            format=getattr(job.configuration, 'output_format', 'mp4'),
+            status=VideoStatus.READY,
+            created_at=job.created_at,
+            processed_at=job.completed_at
+        )
+        
+        metadata_response = VideoMetadataResponse(
+            video=video_metadata,
+            download_url=job.result_url,
+            thumbnail_urls=[f"/api/v1/videos/jobs/{job_id}/thumbnail"],
+            streaming_url=f"/api/v1/videos/jobs/{job_id}/stream"
+        )
+        
+        logger.info(
+            "Retrieved video metadata",
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "video_title": job.configuration.topic
+            }
+        )
+        
+        return metadata_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to get video metadata",
+            extra={
+                "job_id": job_id,
+                "user_id": current_user["user_info"]["id"],
+                "error": str(e)
+            },
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get video metadata: {str(e)}"
         )

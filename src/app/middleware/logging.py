@@ -101,12 +101,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
                 "HTTP request failed",
-                request_id=request_id,
-                method=request.method,
-                url=str(request.url),
-                duration_ms=round(duration_ms, 2),
-                error_type=type(e).__name__,
-                error_message=str(e),
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "url": str(request.url),
+                    "duration_ms": round(duration_ms, 2),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                },
                 exc_info=True,
             )
             raise

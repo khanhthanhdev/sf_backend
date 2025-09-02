@@ -19,8 +19,10 @@ class EnhancedProviderManager(IProviderManager):
             'OpenAI': {
                 'api_key_env': 'OPENAI_API_KEY',
                 'models': [
-                    'openai/gpt-4',
                     'openai/gpt-4o',
+                    'openai/o3',
+                    'openai/o3-mini',
+                    'openai/gpt-4',
                     'openai/gpt-3.5-turbo'
                 ],
                 'display_name': 'OpenAI',
@@ -29,6 +31,7 @@ class EnhancedProviderManager(IProviderManager):
             'Google Gemini': {
                 'api_key_env': 'GOOGLE_API_KEY',
                 'models': [
+                    'gemini/gemini-2.5-pro',
                     'gemini/gemini-1.5-pro-002',
                     'gemini/gemini-2.5-flash-preview-04-17'
                 ],
@@ -38,6 +41,7 @@ class EnhancedProviderManager(IProviderManager):
             'Anthropic': {
                 'api_key_env': 'ANTHROPIC_API_KEY',
                 'models': [
+                    'anthropic/claude-3.5-sonnet',
                     'anthropic/claude-3-5-sonnet-20241022',
                     'anthropic/claude-3-haiku'
                 ],
@@ -63,8 +67,15 @@ class EnhancedProviderManager(IProviderManager):
         }
         
         self.model_descriptions = {
+            # Your requested primary models
+            "openai/gpt-4o": "🚀 OpenAI GPT-4o - Latest and most capable OpenAI model",
+            "openai/o3": "🧠 OpenAI o3 - Advanced reasoning model (latest)",
+            "openai/o3-mini": "⚡ OpenAI o3-mini - Fast reasoning model",
+            "gemini/gemini-2.5-pro": "🎯 Google Gemini 2.5 Pro - Most advanced Gemini model",
+            "anthropic/claude-3.5-sonnet": "📚 Claude 3.5 Sonnet - Excellent reasoning and analysis",
+            
+            # Additional models
             "openai/gpt-4": "🎯 Reliable and consistent, great for educational content",
-            "openai/gpt-4o": "🚀 Latest OpenAI model with enhanced capabilities",
             "gemini/gemini-1.5-pro-002": "🧠 Advanced reasoning, excellent for complex mathematical concepts",
             "gemini/gemini-2.5-flash-preview-04-17": "⚡ Fast processing, good for quick prototypes",
             "anthropic/claude-3-5-sonnet-20241022": "📚 Excellent at detailed explanations and structured content",

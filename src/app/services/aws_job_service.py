@@ -46,6 +46,40 @@ class AWSJobService:
         
         logger.info("Initialized AWS Job Service with RDS backend")
     
+    async def _resolve_user_id(self, clerk_user_id: str) -> UUID:
+        """
+        Resolve Clerk user ID to internal UUID.
+        
+        Args:
+            clerk_user_id: Clerk user ID (e.g., 'user_31qlsnX6Xe8xNdWbsGL5MSxgBxH')
+            
+        Returns:
+            UUID: Internal user ID
+            
+        Raises:
+            JobValidationError: If user not found
+        """
+        try:
+            # Import here to avoid circular dependency
+            from ..database.pydantic_models import UserDB
+            
+            # Get user by Clerk ID
+            user = await self.db_manager.get_pydantic_model(
+                UserDB,
+                'users',
+                'clerk_user_id = $1 AND is_deleted = FALSE',
+                [clerk_user_id]
+            )
+            
+            if not user:
+                raise JobValidationError(f"User not found for Clerk ID: {clerk_user_id}")
+            
+            return user.id
+            
+        except Exception as e:
+            logger.error(f"Failed to resolve user ID for {clerk_user_id}: {e}")
+            raise JobValidationError(f"Failed to resolve user ID: {e}")
+    
     async def create_job(self, user_id: str, job_request: JobCreateRequest) -> JobResponse:
         """
         Create a new job and add it to the queue.
@@ -62,6 +96,9 @@ class AWSJobService:
             DatabaseError: If database operation fails
         """
         try:
+            # Resolve Clerk user ID to internal UUID
+            internal_user_id = await self._resolve_user_id(user_id)
+            
             # Create Job model from request
             job = Job(
                 user_id=user_id,
@@ -72,7 +109,7 @@ class AWSJobService:
             )
             
             # Convert to database model
-            job_db = JobDB.from_job_model(job, UUID(user_id))
+            job_db = JobDB.from_job_model(job, internal_user_id)
             
             # Save job to database
             saved_job_data = await self.db_manager.save_pydantic_model(
@@ -143,8 +180,10 @@ class AWSJobService:
             params = [UUID(job_id)]
             
             if user_id:
+                # Resolve Clerk user ID to internal UUID
+                internal_user_id = await self._resolve_user_id(user_id)
                 where_clause += " AND user_id = $2"
-                params.append(UUID(user_id))
+                params.append(internal_user_id)
             
             job_db = await self.db_manager.get_pydantic_model(
                 JobDB, "jobs", where_clause, params
@@ -249,7 +288,7 @@ class AWSJobService:
         Get paginated list of jobs for a user with optional filtering.
         
         Args:
-            user_id: User ID to get jobs for
+            user_id: Clerk user ID to get jobs for
             limit: Maximum number of jobs to return
             offset: Number of jobs to skip
             filters: Optional filters (status, job_type, priority, dates)
@@ -258,9 +297,12 @@ class AWSJobService:
             JobListResponse with jobs and pagination info
         """
         try:
+            # Resolve Clerk user ID to internal UUID
+            internal_user_id = await self._resolve_user_id(user_id)
+            
             # Build where clause with filters
             where_clause = "user_id = $1 AND is_deleted = FALSE"
-            params = [UUID(user_id)]
+            params = [internal_user_id]
             param_index = 2
             
             if filters:
@@ -505,9 +547,12 @@ class AWSJobService:
             Dict containing job statistics
         """
         try:
+            # Resolve Clerk user ID to internal UUID
+            internal_user_id = await self._resolve_user_id(user_id)
+            
             # Get user's jobs
             where_clause = "user_id = $1 AND is_deleted = FALSE"
-            params = [UUID(user_id)]
+            params = [internal_user_id]
             
             jobs_db = await self.db_manager.get_pydantic_models(
                 JobDB, "jobs", where_clause, params

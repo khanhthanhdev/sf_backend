@@ -222,8 +222,10 @@ def log_aws_error(error: Exception, context: Dict[str, Any]) -> None:
     """
     logger.error(
         "AWS service error occurred",
-        error_type=type(error).__name__,
-        error_message=str(error),
-        **context,
+        extra={
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            **context
+        },
         exc_info=True
     )

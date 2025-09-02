@@ -2,6 +2,8 @@ import os
 import json
 import asyncio
 import uuid
+import time
+import shutil
 from typing import Union, List, Dict, Optional, Protocol
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -9,15 +11,36 @@ import argparse
 import re
 from dotenv import load_dotenv
 
-from mllm_tools.litellm import LiteLLMWrapper
-from mllm_tools.openrouter import OpenRouterWrapper
+# Try to import model wrappers with fallbacks
+try:
+    from mllm_tools.litellm import LiteLLMWrapper
+except ImportError:
+    LiteLLMWrapper = None
+
+try:
+    from mllm_tools.openrouter import OpenRouterWrapper
+except ImportError:
+    OpenRouterWrapper = None
+
+try:
+    from mllm_tools.gemini import GeminiWrapper
+except ImportError:
+    GeminiWrapper = None
+
 from src.core.video_planner import EnhancedVideoPlanner
 from src.core.code_generator import CodeGenerator  # Use existing CodeGenerator
 from src.core.video_renderer import VideoRenderer  # Use existing VideoRenderer
 from src.utils.utils import extract_xml
 from src.config.config import Config
-from task_generator import get_banned_reasonings
-from task_generator.prompts_raw import (_code_font_size, _code_disable, _code_limit, _prompt_manim_cheatsheet)
+
+try:
+    from task_generator import get_banned_reasonings
+    from task_generator.prompts_raw import (_code_font_size, _code_disable, _code_limit, _prompt_manim_cheatsheet)
+except ImportError:
+    # Fallback if task_generator is not available
+    def get_banned_reasonings():
+        return []
+    _code_font_size = _code_disable = _code_limit = _prompt_manim_cheatsheet = ""
 
 # Load configuration
 load_dotenv(override=True)
@@ -87,6 +110,8 @@ class ComponentFactory:
         """Create AI model wrapper."""
         # Use OpenRouter wrapper for OpenRouter models
         if model_name.startswith('openrouter/'):
+            if OpenRouterWrapper is None:
+                raise ImportError("OpenRouterWrapper not available but OpenRouter model requested")
             return OpenRouterWrapper(
                 model_name=model_name,
                 temperature=0.7,
@@ -94,8 +119,29 @@ class ComponentFactory:
                 verbose=config.verbose,
                 use_langfuse=config.use_langfuse
             )
+        elif model_name.startswith('gemini/') or 'gemini' in model_name.lower():
+            # Try to use Gemini wrapper if available
+            if GeminiWrapper is not None:
+                return GeminiWrapper(
+                    model_name=model_name.replace('gemini/', ''),
+                    temperature=0.7,
+                    verbose=config.verbose
+                )
+            elif LiteLLMWrapper is not None:
+                # Fallback to LiteLLM for Gemini models
+                return LiteLLMWrapper(
+                    model_name=model_name,
+                    temperature=0.7,
+                    print_cost=True,
+                    verbose=config.verbose,
+                    use_langfuse=config.use_langfuse
+                )
+            else:
+                raise ImportError("No model wrapper available for Gemini models")
         else:
             # Use LiteLLM wrapper for other models
+            if LiteLLMWrapper is None:
+                raise ImportError("LiteLLMWrapper not available")
             return LiteLLMWrapper(
                 model_name=model_name,
                 temperature=0.7,
@@ -854,7 +900,7 @@ class VideoGeneratorCLI:
         
         # Model configuration
         parser.add_argument('--model', type=str, choices=allowed_models,
-                          default='gemini/gemini-2.5-flash-preview-04-17', help='AI model to use')
+                          default='gemini/gemini-2.5-pro', help='AI model to use')
         parser.add_argument('--scene_model', type=str, choices=allowed_models,
                           help='Specific model for scene generation')
         parser.add_argument('--helper_model', type=str, choices=allowed_models,

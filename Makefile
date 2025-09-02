@@ -17,6 +17,7 @@ help:
 	@echo "  test-clients      Test generated clients"
 	@echo "  clean-clients     Clean generated clients"
 	@echo "  serve-api         Start API server for testing"
+	@echo "  worker            Start video generation worker"
 	@echo "  docs              Generate documentation"
 	@echo ""
 	@echo "Environment variables:"
@@ -98,6 +99,11 @@ check-api:
 serve-api:
 	@echo "Starting API server..."
 	python -m uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Start video generation worker
+worker:
+	@echo "Starting video generation worker..."
+	python run_worker.py
 
 # Development environment setup
 dev-setup-full: install-deps

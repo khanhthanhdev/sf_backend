@@ -9,8 +9,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List, Union
 from uuid import UUID
 import uuid
+import json
 
-from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from sqlalchemy.orm import Session
 
 from ..models.user import ClerkUser, UserProfile, UserRole, UserStatus
@@ -184,6 +185,66 @@ class JobDB(DatabaseMixin):
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
     
+    @field_validator('stages_completed', mode='before')
+    @classmethod
+    def parse_stages_completed(cls, v):
+        """Parse stages_completed from JSON string if needed."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        elif isinstance(v, list):
+            return v
+        else:
+            return []
+    
+    @field_validator('configuration', mode='before')
+    @classmethod
+    def parse_configuration(cls, v):
+        """Parse configuration from JSON string if needed."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        elif isinstance(v, dict):
+            return v
+        else:
+            return {}
+    
+    @field_validator('error_info', mode='before')
+    @classmethod
+    def parse_error_info(cls, v):
+        """Parse error_info from JSON string if needed."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        elif isinstance(v, dict):
+            return v
+        else:
+            return None
+    
+    @field_validator('metrics', mode='before')
+    @classmethod
+    def parse_metrics(cls, v):
+        """Parse metrics from JSON string if needed."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        elif isinstance(v, dict):
+            return v
+        else:
+            return None
+    
     @classmethod
     def from_job_model(cls, job: JobModel, user_id: UUID) -> "JobDB":
         """Create JobDB from Job Pydantic model."""
@@ -319,7 +380,8 @@ class FileMetadataDB(DatabaseMixin):
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
     
-    @validator("file_type")
+    @field_validator("file_type")
+    @classmethod
     def validate_file_type(cls, v):
         """Validate file type is supported."""
         valid_types = [ft.value for ft in FileType]

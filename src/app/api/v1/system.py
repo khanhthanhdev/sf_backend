@@ -716,7 +716,7 @@ async def warm_cache(
         from ...core.cache import warm_common_queries
         result = await warm_common_queries()
         
-        logger.info("Cache warming completed", result=result)
+        logger.info("Cache warming completed", extra={"result": result})
         
         return {
             "message": "Cache warming completed",

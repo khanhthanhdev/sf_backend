@@ -334,6 +334,14 @@ class OptimizedVideoRenderer:
         """Run manim command with optimizations."""
         env = os.environ.copy()
         
+        # Add project root to PYTHONPATH so manim can find src modules
+        project_root = str(Path(__file__).parent.parent.parent.absolute())
+        current_pythonpath = env.get('PYTHONPATH', '')
+        if current_pythonpath:
+            env['PYTHONPATH'] = f"{project_root}:{current_pythonpath}"
+        else:
+            env['PYTHONPATH'] = project_root
+        
         # Optimize environment for performance
         env.update({
             'MANIM_DISABLE_CACHING': 'false' if self.enable_caching else 'true',

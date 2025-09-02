@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from ..core.auth import verify_clerk_token, AuthenticationError, extract_bearer_token
 from ..core.redis import get_redis
 from ..services.video_service import VideoService
+from ..services.enhanced_video_service import EnhancedVideoService
 from ..services.job_service import JobService
 from ..services.queue_service import QueueService
 from ..services.file_service import FileService
@@ -21,6 +22,7 @@ from ..services.aws_video_service import AWSVideoService
 from ..services.aws_job_service import AWSJobService
 from ..services.aws_s3_file_service import AWSS3FileService
 from ..services.aws_user_service import AWSUserService
+from ..database.connection import RDSConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,21 +77,23 @@ async def get_current_user(
         
         logger.debug(
             "User authenticated successfully",
-            user_id=user_id,
-            email=email or "no-email"
+            extra={
+                "user_id": user_id,
+                "email": email or "no-email"
+            }
         )
         
         return auth_info
         
     except AuthenticationError as e:
-        logger.warning(f"Authentication failed: {e}")
+        logger.warning("Authentication failed", extra={"error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"}
         )
     except Exception as e:
-        logger.error(f"Authentication error: {e}", exc_info=True)
+        logger.error("Authentication error", extra={"error": str(e)}, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication service error"
@@ -123,23 +127,8 @@ async def get_optional_user(
         # Return None for optional authentication
         return None
     except Exception as e:
-        logger.error(f"Optional authentication error: {e}", exc_info=True)
+        logger.error("Optional authentication error", extra={"error": str(e)}, exc_info=True)
         return None
-
-
-def get_video_service(
-    redis_client: Redis = Depends(get_redis)
-) -> VideoService:
-    """
-    FastAPI dependency to get VideoService instance.
-    
-    Args:
-        redis_client: Redis client dependency
-        
-    Returns:
-        VideoService instance
-    """
-    return VideoService(redis_client)
 
 
 def get_job_service(
@@ -202,6 +191,36 @@ def get_aws_service_factory(request: Request) -> Optional[AWSServiceFactory]:
     return getattr(request.app.state, 'aws_service_factory', None)
 
 
+def get_rds_connection_manager(
+    aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
+) -> RDSConnectionManager:
+    """
+    FastAPI dependency to get RDS Connection Manager instance.
+    
+    Args:
+        aws_factory: AWS service factory dependency
+        
+    Returns:
+        RDSConnectionManager instance
+        
+    Raises:
+        HTTPException: If RDS connection not available
+    """
+    if not aws_factory:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AWS services not available"
+        )
+    
+    if not aws_factory.rds_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RDS connection not available"
+        )
+    
+    return aws_factory.rds_manager
+
+
 def get_aws_file_service(
     aws_factory: Optional[AWSServiceFactory] = Depends(get_aws_service_factory)
 ) -> AWSS3FileService:
@@ -226,7 +245,7 @@ def get_aws_file_service(
     try:
         return aws_factory.create_file_service()
     except Exception as e:
-        logger.error(f"Failed to create AWS file service: {e}")
+        logger.error("Failed to create AWS file service", extra={"error": str(e)}, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AWS file service unavailable"
@@ -257,7 +276,7 @@ def get_aws_video_service(
     try:
         return aws_factory.create_video_service()
     except Exception as e:
-        logger.error(f"Failed to create AWS video service: {e}")
+        logger.error("Failed to create AWS video service", extra={"error": str(e)}, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AWS video service unavailable"
@@ -288,7 +307,7 @@ def get_aws_job_service(
     try:
         return aws_factory.create_job_service()
     except Exception as e:
-        logger.error(f"Failed to create AWS job service: {e}")
+        logger.error("Failed to create AWS job service", extra={"error": str(e)}, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AWS job service unavailable"
@@ -319,11 +338,48 @@ def get_aws_user_service(
     try:
         return aws_factory.create_user_service()
     except Exception as e:
-        logger.error(f"Failed to create AWS user service: {e}")
+        logger.error("Failed to create AWS user service", extra={"error": str(e)}, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AWS user service unavailable"
         )
+
+
+def get_video_service(
+    db_manager: RDSConnectionManager = Depends(get_rds_connection_manager),
+    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
+) -> VideoService:
+    """
+    FastAPI dependency to get VideoService instance.
+    
+    Args:
+        db_manager: RDS connection manager dependency
+        aws_video_service: AWS video service dependency
+        
+    Returns:
+        VideoService instance
+    """
+    return VideoService(db_manager, aws_video_service)
+
+
+def get_enhanced_video_service(
+    video_service: VideoService = Depends(get_video_service),
+    aws_video_service: AWSVideoService = Depends(get_aws_video_service)
+) -> EnhancedVideoService:
+    """
+    FastAPI dependency to get EnhancedVideoService instance.
+    
+    This service integrates the FastAPI backend with the core video generation pipeline
+    from generate_video.py and src/core/ components.
+    
+    Args:
+        video_service: Base video service dependency
+        aws_video_service: AWS video service dependency
+        
+    Returns:
+        EnhancedVideoService instance
+    """
+    return EnhancedVideoService(video_service, aws_video_service)
 
 
 class PaginationParams:
@@ -537,7 +593,7 @@ async def rate_limit_check(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Rate limit check failed: {e}", exc_info=True)
+        logger.error("Rate limit check failed", extra={"error": str(e)}, exc_info=True)
         # Don't block requests if rate limiting fails
         pass
 

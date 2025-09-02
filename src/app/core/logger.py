@@ -217,7 +217,7 @@ def log_error(
     if user_id:
         error_context["user_id"] = user_id
     
-    logger.error("Error occurred", **error_context, exc_info=True)
+    logger.error("Error occurred", extra=error_context, exc_info=True)
 
 
 def log_security_event(
