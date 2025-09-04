@@ -125,6 +125,59 @@ A comprehensive text-to-video generation system with FastAPI backend, featuring 
    - Alternative Docs: http://localhost:8000/redoc
    - Health Check: http://localhost:8000/health
 
+## Supported AI Model Providers
+
+The T2M system supports multiple AI model providers through a unified interface:
+
+### 🤖 **OpenAI** 
+- **Models**: GPT-4o, GPT-4, o3, o3-mini, GPT-3.5 Turbo
+- **Setup**: Set `OPENAI_API_KEY` environment variable
+- **Best for**: General-purpose video generation, reliable performance
+- **Example**: `openai/gpt-4o`
+
+### 🧠 **Google Gemini**
+- **Models**: Gemini 2.5 Pro, Gemini 1.5 Pro, Gemini Flash
+- **Setup**: Set `GOOGLE_API_KEY` environment variable
+- **Best for**: Mathematical content, complex reasoning
+- **Example**: `gemini/gemini-2.5-pro`
+
+### 🔬 **Anthropic Claude**
+- **Models**: Claude 3.5 Sonnet, Claude 3 Haiku
+- **Setup**: Set `ANTHROPIC_API_KEY` environment variable
+- **Best for**: Educational content, detailed explanations
+- **Example**: `anthropic/claude-3.5-sonnet`
+
+### ☁️ **AWS Bedrock** *(NEW!)*
+- **Models**: Claude 3.5/4, Amazon Nova, Meta Llama, Cohere, Mistral
+- **Setup**: AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME`)
+- **Best for**: Enterprise deployments, cost optimization, reasoning models
+- **Examples**: 
+  - `bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0`
+  - `bedrock/us.amazon.nova-pro-v1:0`
+  - `bedrock/meta.llama3-1-405b-instruct-v1:0`
+
+### 🌐 **OpenRouter**
+- **Models**: Access to multiple providers through single API
+- **Setup**: Set `OPENROUTER_API_KEY` environment variable
+- **Best for**: Model experimentation, fallback options
+- **Example**: `openrouter/anthropic/claude-3.5-sonnet`
+
+### 🔧 **GitHub Models**
+- **Models**: GitHub-hosted versions of popular models
+- **Setup**: Set `GITHUB_TOKEN` environment variable
+- **Best for**: Development, testing, free tier usage
+- **Example**: `github/gpt-4o`
+
+### 📊 **Vertex AI**
+- **Models**: Google Cloud hosted Gemini models
+- **Setup**: Google Cloud credentials
+- **Best for**: Google Cloud integration, enterprise scale
+- **Example**: `vertex_ai/gemini-1.5-pro-002`
+
+> 💡 **Quick Setup**: For AWS Bedrock, see our detailed [AWS Bedrock Setup Guide](AWS_BEDROCK_SETUP.md)
+> 
+> 🧪 **Test Your Setup**: Run `python test_bedrock.py` to verify Bedrock integration
+
 ## Usage
 
 ### Video Generation Modes
@@ -162,11 +215,22 @@ python main.py --mode local \
 import asyncio
 from src.core.video_orchestrator import VideoGenerationOrchestrator, VideoGenerationConfig
 from mllm_tools.gemini import GeminiWrapper
+from mllm_tools.bedrock import BedrockWrapper  # NEW: Bedrock support
 
 async def generate_video():
-    # Initialize models
+    # Initialize models - try different providers!
+    
+    # Option 1: Google Gemini
     planner_model = GeminiWrapper(model_name="gemini-1.5-pro")
     scene_model = GeminiWrapper(model_name="gemini-1.5-pro")
+    
+    # Option 2: AWS Bedrock (Enterprise)
+    # planner_model = BedrockWrapper(model_name="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0")
+    # scene_model = BedrockWrapper(model_name="bedrock/us.amazon.nova-pro-v1:0")
+    
+    # Option 3: Mix providers for optimal performance
+    # planner_model = BedrockWrapper(model_name="bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0")  # Reasoning
+    # scene_model = GeminiWrapper(model_name="gemini-2.5-pro")  # Mathematical content
     
     # Configure generation
     config = VideoGenerationConfig(

@@ -2,7 +2,8 @@
 System monitoring and health check API endpoints.
 
 This module implements REST API endpoints for system monitoring,
-health checks, metrics collection, and queue status monitoring.
+health checks, metrics collection, and queue status monitoring with
+dependency injection container integration.
 """
 
 import logging
@@ -19,14 +20,49 @@ from ...core.redis import get_redis, redis_manager, RedisKeyManager
 from ...core.auth import clerk_manager
 from ...core.cache import cache_response, CacheConfig, cache_manager
 from ...core.cache_monitoring import cache_monitor, generate_cache_report
+from ...core.service_factory import ApplicationServiceFactory
+from ...core.container import DependencyContainer
 from ...models.system import SystemHealthResponse, SystemMetricsResponse, QueueStatusResponse
-from ...api.dependencies import get_optional_user
+from ...api.dependencies import get_optional_user, get_rds_connection_manager
+from ...api.enhanced_dependencies import (
+    get_service_factory,
+    get_dependency_container,
+    get_health_check_info
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/system", tags=["system"])
 
 
-@router.get("/health", response_model=SystemHealthResponse)
+@router.get(
+    "/health",
+    response_model=SystemHealthResponse,
+    summary="System Health",
+    description="Comprehensive health for Redis, auth, job queue, resources, and storage.",
+    responses={
+        200: {
+            "description": "System health returned",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "timestamp": "2024-09-04T09:00:00Z",
+                        "uptime_seconds": 123456,
+                        "components": {
+                            "redis": {"status": "healthy"},
+                            "authentication": {"status": "healthy"},
+                            "job_queue": {"status": "healthy", "queue_length": 2},
+                            "system_resources": {"status": "healthy"},
+                            "storage": {"status": "healthy"}
+                        },
+                        "version": "1.0.0",
+                        "environment": "development"
+                    }
+                }
+            }
+        }
+    }
+)
 @cache_response(ttl=CacheConfig.SHORT_TTL, user_specific=True)
 async def get_system_health(
     request: Request,
@@ -131,7 +167,45 @@ async def get_system_health(
         )
 
 
-@router.get("/metrics", response_model=SystemMetricsResponse)
+@router.get(
+    "/metrics",
+    response_model=SystemMetricsResponse,
+    summary="System Metrics",
+    description="Detailed performance metrics including CPU, memory, Redis, and job stats.",
+    responses={
+        200: {
+            "description": "Metrics returned",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "timestamp": "2024-09-04T09:00:00Z",
+                        "system_resources": {
+                            "cpu_percent": 12.5,
+                            "memory_total_gb": 16.0,
+                            "memory_used_gb": 6.5,
+                            "memory_percent": 42.1,
+                            "disk_total_gb": 256.0,
+                            "disk_used_gb": 120.1,
+                            "disk_percent": 46.9
+                        },
+                        "redis_metrics": {
+                            "memory_used_mb": 25.5,
+                            "connected_clients": 4,
+                            "commands_processed": 123456,
+                            "keyspace_hits": 4567,
+                            "keyspace_misses": 321
+                        },
+                        "job_metrics": {
+                            "queue_length": 1,
+                            "jobs_by_status": {"queued": 1, "processing": 2, "completed": 10},
+                            "processing_metrics": {"avg_time_seconds": 320.5}
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 @cache_response(ttl=CacheConfig.MEDIUM_TTL, user_specific=True)
 async def get_system_metrics(
     request: Request,
@@ -839,6 +913,221 @@ async def get_connection_stats(
                 "Use connection health checks to maintain pool quality"
             ]
         }
+        
+    except Exception as e:
+        logger.error(f"Failed to get connection stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get connection stats: {str(e)}"
+        )
+
+
+@router.get("/performance/db")
+async def get_db_performance(
+    manager = Depends(get_rds_connection_manager),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+) -> Dict[str, Any]:
+    """Get database connection pool and query performance statistics."""
+    try:
+        stats = await manager.get_pool_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get DB performance stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get DB performance stats: {str(e)}"
+        )
+
+# New DI Container and Service Factory endpoints
+
+@router.get("/di-container/status")
+async def get_di_container_status(
+    container: DependencyContainer = Depends(get_dependency_container),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+) -> Dict[str, Any]:
+    """
+    Get dependency injection container status and service registrations.
+    
+    This endpoint demonstrates the new DI container functionality
+    and provides detailed information about registered services.
+    
+    Returns:
+        Container status including registered services, health, and metrics
+    """
+    try:
+        logger.info("Getting DI container status")
+        
+        # Get container health status
+        health_status = container.get_health_status()
+        
+        # Get registration information
+        registration_info = container.get_registration_info()
+        
+        # Calculate statistics
+        total_services = len(registration_info)
+        initialized_services = sum(1 for info in registration_info.values() if info.get("initialized", False))
+        
+        service_types = {}
+        for info in registration_info.values():
+            lifetime = info.get("lifetime", "unknown")
+            service_types[lifetime] = service_types.get(lifetime, 0) + 1
+        
+        return {
+            "status": "healthy" if health_status.get("health") == "healthy" else "degraded",
+            "container_health": health_status,
+            "statistics": {
+                "total_services": total_services,
+                "initialized_services": initialized_services,
+                "initialization_rate": round((initialized_services / total_services * 100), 2) if total_services > 0 else 0,
+                "service_types": service_types
+            },
+            "registered_services": registration_info,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get DI container status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get DI container status: {str(e)}"
+        )
+
+
+@router.get("/service-factory/status")
+async def get_service_factory_status(
+    service_factory: ApplicationServiceFactory = Depends(get_service_factory),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+) -> Dict[str, Any]:
+    """
+    Get service factory status and comprehensive service health information.
+    
+    This endpoint demonstrates the new service factory functionality
+    and provides detailed information about service initialization and health.
+    
+    Returns:
+        Service factory status including AWS services, database, and container health
+    """
+    try:
+        logger.info("Getting service factory status")
+        
+        # Get comprehensive health status
+        health_status = service_factory.get_health_status()
+        
+        # Check if AWS services are available
+        aws_available = service_factory.aws_service_factory is not None
+        aws_status = {}
+        
+        if aws_available:
+            try:
+                aws_status = await service_factory.aws_service_factory.health_check()
+            except Exception as e:
+                aws_status = {"status": "error", "error": str(e)}
+        
+        # Check database availability
+        db_available = service_factory.db_manager is not None
+        db_status = {}
+        
+        if db_available:
+            try:
+                db_health = await service_factory.db_manager.health_check()
+                db_status = {"status": "healthy" if db_health else "unhealthy", "available": True}
+            except Exception as e:
+                db_status = {"status": "error", "available": True, "error": str(e)}
+        else:
+            db_status = {"status": "not_available", "available": False}
+        
+        return {
+            "status": "healthy" if service_factory.is_initialized() else "initializing",
+            "factory_health": health_status,
+            "services": {
+                "aws_services": {
+                    "available": aws_available,
+                    "status": aws_status.get("overall_status", "unknown") if aws_available else "not_available",
+                    "details": aws_status if aws_available else None
+                },
+                "database": db_status,
+                "container": health_status.get("container", {})
+            },
+            "capabilities": {
+                "video_processing": aws_available,
+                "file_storage": aws_available,
+                "job_management": db_available or aws_available,
+                "user_management": db_available or aws_available
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get service factory status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get service factory status: {str(e)}"
+        )
+
+
+@router.get("/services/comprehensive-health")
+async def get_comprehensive_health(
+    health_info: dict = Depends(get_health_check_info),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+) -> Dict[str, Any]:
+    """
+    Get comprehensive health check information using the enhanced DI system.
+    
+    This endpoint demonstrates the integration of the DI container,
+    service factory, and health check systems.
+    
+    Returns:
+        Comprehensive health status of all system components
+    """
+    try:
+        logger.info("Performing comprehensive health check")
+        
+        # Determine overall system health
+        container_health = health_info.get("container", {}).get("health", "unknown")
+        factory_health = health_info.get("service_factory", {}).get("health", "unknown")
+        
+        overall_healthy = (container_health == "healthy" and 
+                          factory_health == "healthy")
+        
+        # Add performance metrics
+        current_time = datetime.utcnow()
+        
+        return {
+            "overall_status": "healthy" if overall_healthy else "degraded",
+            "timestamp": current_time.isoformat(),
+            "system_components": {
+                "dependency_injection": {
+                    "status": container_health,
+                    "details": health_info.get("container", {})
+                },
+                "service_factory": {
+                    "status": factory_health,
+                    "details": health_info.get("service_factory", {})
+                },
+                "registered_services": health_info.get("services", {})
+            },
+            "summary": {
+                "total_components": 2,  # DI container + service factory
+                "healthy_components": sum([
+                    1 for status in [container_health, factory_health] 
+                    if status == "healthy"
+                ]),
+                "service_registrations": len(health_info.get("services", {})),
+                "initialization_complete": overall_healthy
+            },
+            "recommendations": [
+                "System is operating normally" if overall_healthy else "Check component details for issues",
+                "Monitor service registration health regularly",
+                "Ensure all critical services are properly initialized"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed comprehensive health check: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed comprehensive health check: {str(e)}"
+        )
         
     except Exception as e:
         logger.error(f"Failed to get connection stats: {e}")

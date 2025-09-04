@@ -130,6 +130,12 @@ class AWSQueueManager:
         Returns:
             Dict with job information or None if no jobs available
         """
+        # NOTE: Placeholder implementation to avoid SyntaxError from incomplete code.
         try:
-            # Register/update worker status
-            await self._update_worker_status(worker_id, W
+            # Mark worker as idle by default until assignment logic is implemented
+            await self._update_worker_status(worker_id, WorkerStatus.IDLE)
+            logger.warning("dequeue_next_job is not implemented; returning None")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to dequeue next job for worker {worker_id}: {e}")
+            return None

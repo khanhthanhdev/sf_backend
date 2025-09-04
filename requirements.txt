@@ -107,9 +107,9 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
     
-    # Redis for caching and job queuing
-redis>=5.0.0
-hiredis>=2.2.0  # C extension for better Redis performanc
+    # Redis dependencies removed - application now uses database-only storage
+    # redis>=5.0.0
+    # hiredis>=2.2.0  # C extension for better Redis performance
     
     # Async PostgreSQL driver
 asyncpg>=0.29.0

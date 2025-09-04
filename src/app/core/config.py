@@ -45,15 +45,7 @@ class Settings(BaseSettings):
         env="ALLOWED_HEADERS"
     )
     
-    # Redis settings
-    redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
-    redis_host: str = Field(default="localhost", env="REDIS_HOST")
-    redis_port: int = Field(default=6379, env="REDIS_PORT")
-    redis_db: int = Field(default=0, env="REDIS_DB")
-    redis_password: Optional[str] = Field(default=None, env="REDIS_PASSWORD")
-    redis_max_connections: int = Field(default=20, env="REDIS_MAX_CONNECTIONS")
-    redis_socket_timeout: int = Field(default=5, env="REDIS_SOCKET_TIMEOUT")
-    redis_socket_connect_timeout: int = Field(default=5, env="REDIS_SOCKET_CONNECT_TIMEOUT")
+
     
     # Clerk authentication settings
     clerk_secret_key: str = Field(default="", env="CLERK_SECRET_KEY")
@@ -87,6 +79,11 @@ class Settings(BaseSettings):
     log_file: Optional[str] = Field(default=None, env="LOG_FILE")
     log_rotation: str = Field(default="1 day", env="LOG_ROTATION")
     log_retention: str = Field(default="30 days", env="LOG_RETENTION")
+    # Correlation header for logs and tracing
+    correlation_id_header: str = Field(
+        default="X-Correlation-ID",
+        env="LOG_CORRELATION_ID_HEADER"
+    )
     
     # Security settings
     secret_key: str = Field(default="dev-secret-key-change-in-production", env="SECRET_KEY")
@@ -182,14 +179,33 @@ class Settings(BaseSettings):
     def is_testing(self) -> bool:
         """Check if running in testing mode."""
         return self.environment == "testing"
+
+    # Middleware configuration
+    # Comma-separated ordered list of middleware keys to apply
+    middleware_order: str = Field(
+        default="trusted_host,security,cors,compression,performance,async,correlation,logging,auth",
+        env="MIDDLEWARE_ORDER",
+    )
+    enable_trusted_hosts: bool = Field(default=False, env="ENABLE_TRUSTED_HOSTS")
+    trusted_hosts: str = Field(default="*", env="TRUSTED_HOSTS")
+    enable_security_middleware: bool = Field(default=True, env="ENABLE_SECURITY_MIDDLEWARE")
+    enable_cors_middleware: bool = Field(default=True, env="ENABLE_CORS_MIDDLEWARE")
+    enable_compression_middleware: bool = Field(default=True, env="ENABLE_COMPRESSION_MIDDLEWARE")
+    enable_performance_middleware: bool = Field(default=True, env="ENABLE_PERFORMANCE_MIDDLEWARE")
+    enable_async_middleware: bool = Field(default=True, env="ENABLE_ASYNC_MIDDLEWARE")
+    enable_correlation_middleware: bool = Field(default=True, env="ENABLE_CORRELATION_MIDDLEWARE")
+    enable_logging_middleware: bool = Field(default=True, env="ENABLE_LOGGING_MIDDLEWARE")
+    enable_auth_middleware: bool = Field(default=True, env="ENABLE_AUTH_MIDDLEWARE")
+
+    def get_middleware_order(self) -> list[str]:
+        """Return parsed middleware order as a list of keys."""
+        return [k.strip() for k in self.middleware_order.split(",") if k.strip()]
+
+    def get_trusted_hosts(self) -> list[str]:
+        """Return parsed trusted hosts list."""
+        return [h.strip() for h in self.trusted_hosts.split(",") if h.strip()]
     
-    def get_redis_url(self) -> str:
-        """Get Redis URL with proper formatting."""
-        if self.redis_url:
-            return self.redis_url
-        
-        auth_part = f":{self.redis_password}@" if self.redis_password else ""
-        return f"redis://{auth_part}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
     
     model_config = {
         "env_file": ".env",

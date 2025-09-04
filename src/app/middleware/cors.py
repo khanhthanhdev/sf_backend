@@ -39,6 +39,7 @@ class EnhancedCORSMiddleware:
         self.expose_headers = expose_headers or [
             "X-Process-Time",
             "X-Request-ID",
+            settings.correlation_id_header,
             "X-Rate-Limit-Remaining",
             "X-Rate-Limit-Reset"
         ]
@@ -104,7 +105,8 @@ def setup_cors_middleware(app, **kwargs) -> None:
         "allow_headers": settings.allowed_headers,
         "expose_headers": [
             "X-Process-Time",
-            "X-Request-ID", 
+            "X-Request-ID",
+            settings.correlation_id_header,
             "X-Rate-Limit-Remaining",
             "X-Rate-Limit-Reset"
         ],

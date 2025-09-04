@@ -617,13 +617,16 @@ class OptimizedVideoRenderer:
         
         # Get scene count
         scene_outline_path = os.path.join(self.output_dir, file_prefix, f"{file_prefix}_scene_outline.txt")
+        if not os.path.exists(scene_outline_path):
+            print(f"No scene outline file found at: {scene_outline_path}")
+            return ([], [])
         with open(scene_outline_path) as f:
             plan = f.read()
         
         scene_outline_match = re.search(r'(<SCENE_OUTLINE>.*?</SCENE_OUTLINE>)', plan, re.DOTALL)
         if not scene_outline_match:
             print(f"No scene outline found in plan: {plan[:200]}...")
-            return []
+            return ([], [])
         scene_outline = scene_outline_match.group(1)
         scene_count = len(re.findall(r'<SCENE_(\d+)>[^<]', scene_outline))
         

@@ -278,9 +278,11 @@ class SuccessResponse(BaseModel, Generic[T]):
 
 class ErrorResponse(BaseModel):
     """
-    Standard error response schema.
+    Enhanced standard error response schema.
     
-    Provides consistent error formatting across all API endpoints.
+    Provides consistent error formatting across all API endpoints with
+    support for correlation IDs, severity levels, and comprehensive
+    error context for debugging and monitoring.
     """
     
     status: ResponseStatus = Field(
@@ -302,7 +304,31 @@ class ErrorResponse(BaseModel):
     )
     request_id: Optional[str] = Field(
         None,
-        description="Request ID for tracking"
+        description="Request ID for tracking (correlation ID)"
+    )
+    correlation_id: Optional[str] = Field(
+        None,
+        description="Correlation ID for distributed tracing"
+    )
+    severity: Optional[str] = Field(
+        None,
+        description="Error severity level (low, medium, high, critical)",
+        example="medium"
+    )
+    category: Optional[str] = Field(
+        None,
+        description="Error category for classification",
+        example="validation"
+    )
+    retry_after: Optional[int] = Field(
+        None,
+        description="Seconds to wait before retrying (for rate limiting)",
+        example=60
+    )
+    documentation_url: Optional[str] = Field(
+        None,
+        description="URL to relevant documentation",
+        example="https://docs.api.com/errors/validation"
     )
     
     model_config = ConfigDict(
@@ -319,7 +345,10 @@ class ErrorResponse(BaseModel):
                     "timestamp": "2024-01-15T10:30:00Z"
                 },
                 "timestamp": "2024-01-15T10:30:00Z",
-                "request_id": "req_123456789"
+                "request_id": "req_123456789",
+                "correlation_id": "corr_789012345",
+                "severity": "medium",
+                "category": "business_logic"
             }
         }
     )

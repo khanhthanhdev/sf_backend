@@ -26,7 +26,53 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.get("/me", response_model=UserProfile)
+@router.get(
+    
+    "/me",
+    response_model=UserProfile,
+    summary="Get Current User Profile",
+    description=(
+        "Return the authenticated user's profile.\n\n"
+        "Authentication: Send Clerk session JWT via `Authorization: Bearer <token>`.\n\n"
+        "Example curl:\n\n"
+        "curl -H 'Authorization: Bearer <token>' https://api.example.com/api/v1/auth/me"
+    ),
+    responses={
+        200: {
+            "description": "User profile returned",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "user_2NiWoZK2iKDvEFEHaakTrHVfcrq",
+                        "username": "alice",
+                        "full_name": "Alice Johnson",
+                        "email": "alice@example.com",
+                        "image_url": "https://img.example.com/u/alice.png",
+                        "email_verified": True,
+                        "created_at": "2024-08-01T12:00:00Z",
+                        "last_sign_in_at": "2024-09-01T08:45:00Z"
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Missing or invalid token",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Unauthorized",
+                        "error": {
+                            "message": "Invalid or missing authentication token",
+                            "code": "UNAUTHORIZED",
+                            "timestamp": "2024-09-04T09:00:00Z"
+                        },
+                        "request_id": "b3a2d0ea-3c2b-4a33-81b7-0df5a3b9c111"
+                    }
+                }
+            }
+        }
+    }
+)
 async def get_current_user_profile(
     user_info: Dict[str, Any] = Depends(get_authenticated_user)
 ) -> UserProfile:
@@ -207,7 +253,53 @@ async def get_user_permissions(
         )
 
 
-@router.get("/status")
+@router.get(
+    "/status",
+    summary="Authentication Status",
+    description=(
+        "Check if the current request is authenticated.\n\n"
+        "If authenticated, returns basic user info; otherwise indicates unauthenticated.\n\n"
+        "Send Clerk session JWT via `Authorization: Bearer <token>` (optional)."
+    ),
+    responses={
+        200: {
+            "description": "Status returned",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "authenticated": {
+                            "summary": "Authenticated user",
+                            "value": {
+                                "authenticated": True,
+                                "user_id": "user_123",
+                                "email": "user@example.com",
+                                "email_verified": True,
+                                "username": "user",
+                                "request_context": {
+                                    "path": "/api/v1/auth/status",
+                                    "method": "GET",
+                                    "client_ip": "127.0.0.1"
+                                }
+                            }
+                        },
+                        "unauthenticated": {
+                            "summary": "No auth provided",
+                            "value": {
+                                "authenticated": False,
+                                "message": "No authentication provided",
+                                "request_context": {
+                                    "path": "/api/v1/auth/status",
+                                    "method": "GET",
+                                    "client_ip": "127.0.0.1"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def get_auth_status(
     user_info: Dict[str, Any] = Depends(get_optional_user),
     request_context: Dict[str, Any] = Depends(get_request_context)
@@ -296,7 +388,46 @@ async def get_auth_status(
         }
 
 
-@router.post("/verify")
+@router.post(
+    "/verify",
+    summary="Verify Token",
+    description=(
+        "Verify an authentication token and return user information.\n\n"
+        "Requires a valid Clerk session token in `Authorization: Bearer <token>`."
+    ),
+    responses={
+        200: {
+            "description": "Token verified",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "verified": True,
+                        "user_id": "user_2NiWoZK2iKDvEFEHaakTrHVfcrq",
+                        "email": "alice@example.com",
+                        "email_verified": True,
+                        "message": "Token verified successfully"
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Invalid token",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Unauthorized",
+                        "error": {
+                            "message": "Invalid token",
+                            "code": "UNAUTHORIZED",
+                            "timestamp": "2024-09-04T09:00:00Z"
+                        },
+                        "request_id": "b3a2d0ea-3c2b-4a33-81b7-0df5a3b9c222"
+                    }
+                }
+            }
+        }
+    }
+)
 async def verify_token(
     user_info: Dict[str, Any] = Depends(get_verified_user)
 ) -> Dict[str, Any]:

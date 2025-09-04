@@ -9,11 +9,10 @@ import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Response
 from redis.asyncio import Redis
 
-from ...core.redis import get_redis, RedisKeyManager, redis_json_get, redis_json_set
-from ...core.cache import cache_response, CacheConfig
+from ...utils.http_cache import compute_etag, set_cache_headers, not_modified
 from ...core.performance import performance_monitor
 from ...models.job import (
     JobListResponse, JobResponse, JobStatus, Job,
@@ -26,6 +25,7 @@ from ...api.dependencies import (
     get_job_filters, PaginationParams, JobFilters, validate_job_ownership
 )
 from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
+from ...core.audit import log_audit_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -79,6 +79,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 )
 async def list_jobs(
     request: Request,
+    response: Response,
     current_user: Dict[str, Any] = Depends(get_current_user),
     pagination: PaginationParams = Depends(get_pagination_params),
     filters: JobFilters = Depends(get_job_filters),
@@ -131,7 +132,14 @@ async def list_jobs(
                 "total_count": jobs_result.total_count
             }
         )
-        
+        # Set HTTP cache headers (ETag/Cache-Control)
+        try:
+            etag = compute_etag(jobs_result.model_dump())
+        except Exception:
+            etag = compute_etag(jobs_result)
+        if not_modified(request, etag):
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+        set_cache_headers(response, etag, max_age=60)
         return jobs_result
         
     except Exception as e:
@@ -230,6 +238,14 @@ async def cancel_job(
                 "user_id": current_user["user_info"]["id"]
             }
         )
+        # Audit log
+        log_audit_event(
+            action="job.cancel",
+            user_id=current_user["user_info"]["id"],
+            resource_type="job",
+            resource_id=job_id,
+            status="success",
+        )
         
         return {
             "success": True,
@@ -248,6 +264,15 @@ async def cancel_job(
             "job_id": job_id,
             "user_id": current_user["user_info"]["id"]
         })
+        # Audit failure
+        log_audit_event(
+            action="job.cancel",
+            user_id=current_user["user_info"]["id"],
+            resource_type="job",
+            resource_id=job_id,
+            status="failed",
+            details={"error": str(e)},
+        )
         raise handle_aws_service_error(e, "rds", "cancel job")
 
 
@@ -335,6 +360,14 @@ async def delete_job(
                 "user_id": current_user["user_info"]["id"]
             }
         )
+        # Audit log
+        log_audit_event(
+            action="job.delete",
+            user_id=current_user["user_info"]["id"],
+            resource_type="job",
+            resource_id=job_id,
+            status="success",
+        )
         
         return {
             "success": True,
@@ -351,6 +384,15 @@ async def delete_job(
             "job_id": job_id,
             "user_id": current_user["user_info"]["id"]
         })
+        # Audit failure
+        log_audit_event(
+            action="job.delete",
+            user_id=current_user["user_info"]["id"],
+            resource_type="job",
+            resource_id=job_id,
+            status="failed",
+            details={"error": str(e)},
+        )
         raise handle_aws_service_error(e, "rds", "delete job")
 
 
@@ -372,7 +414,9 @@ async def get_job_logs(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of log entries"),
     offset: int = Query(0, ge=0, description="Number of log entries to skip"),
     level: Optional[str] = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
-    aws_job_service: AWSJobService = Depends(get_aws_job_service)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service),
+    request: Request = None,
+    response: Response = None,
 ) -> Dict[str, Any]:
     """
     Get processing logs for a specific job.
@@ -452,7 +496,7 @@ async def get_job_logs(
             }
         )
         
-        return {
+        result_payload = {
             "job_id": job_id,
             "logs": log_entries,
             "pagination": {
@@ -472,6 +516,12 @@ async def get_job_logs(
                 "progress": job_data.get("progress_percentage", 0)
             }
         }
+        if request and response:
+            etag = compute_etag(result_payload)
+            if not_modified(request, etag):
+                return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+            set_cache_headers(response, etag, max_age=60)
+        return result_payload
         
     except HTTPException:
         raise
@@ -499,7 +549,9 @@ async def get_job_logs(
 async def get_job_details(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    aws_job_service: AWSJobService = Depends(get_aws_job_service)
+    aws_job_service: AWSJobService = Depends(get_aws_job_service),
+    request: Request = None,
+    response: Response = None
 ) -> JobStatusResponse:
     """
     Get detailed information about a specific job.
@@ -543,7 +595,7 @@ async def get_job_details(
             }
         )
         
-        return JobStatusResponse(
+        result_obj = JobStatusResponse(
             job_id=job_data.get("id"),
             status=job_data.get("status"),
             progress=job_data.get("progress_percentage", 0),
@@ -553,6 +605,12 @@ async def get_job_details(
             updated_at=job_data.get("updated_at"),
             completed_at=job_data.get("completed_at")
         )
+        if request and response:
+            etag = compute_etag(result_obj.model_dump())
+            if not_modified(request, etag):
+                return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+            set_cache_headers(response, etag, max_age=60)
+        return result_obj
         
     except HTTPException:
         raise

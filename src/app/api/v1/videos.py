@@ -731,7 +731,28 @@ async def download_video(
         )
 
 
-@router.get("/jobs/{job_id}/stream")
+@router.get(
+    "/jobs/{job_id}/stream",
+    summary="Stream Video",
+    description="Stream a completed video with range requests and optional quality selection",
+    responses={
+        200: {
+            "description": "Video stream",
+            "content": {
+                "video/mp4": {"schema": {"type": "string", "format": "binary"}}
+            },
+            "headers": {
+                "Accept-Ranges": {"description": "Indicates support for range requests", "schema": {"type": "string", "example": "bytes"}}
+            }
+        },
+        206: {
+            "description": "Partial content (range request)"
+        },
+        403: {"description": "Access denied"},
+        404: {"description": "Job or video not found"},
+        409: {"description": "Job not completed yet"}
+    }
+)
 async def stream_video(
     job_id: str,
     request: Request,
@@ -875,7 +896,20 @@ async def stream_video(
         )
 
 
-@router.get("/jobs/{job_id}/thumbnail")
+@router.get(
+    "/jobs/{job_id}/thumbnail",
+    summary="Get Video Thumbnail",
+    description="Get a generated thumbnail for a completed video (small, medium, large)",
+    responses={
+        200: {
+            "description": "JPEG thumbnail image",
+            "content": {"image/jpeg": {"schema": {"type": "string", "format": "binary"}}}
+        },
+        403: {"description": "Access denied"},
+        404: {"description": "Job or thumbnail not found"},
+        409: {"description": "Job not completed yet"}
+    }
+)
 async def get_video_thumbnail(
     job_id: str,
     request: Request,

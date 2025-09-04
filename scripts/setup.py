@@ -97,7 +97,7 @@ def main():
     print("\nNext steps:")
     print("1. Install dependencies: pip install -e .")
     print("2. Update .env file with your actual configuration values")
-    print("3. Start Redis server: redis-server")
+    print("3. Redis has been removed - application now uses database-only storage")
     print("4. Run the application: python -m src.app.main")
     print("5. Visit http://localhost:8000/docs for API documentation")
 

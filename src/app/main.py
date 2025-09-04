@@ -1,124 +1,132 @@
 """
 FastAPI application entry point.
-Main application initialization with middleware, routers, and configuration.
+Main application initialization with dependency injection, service factory,
+and comprehensive lifecycle management.
 """
 
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, List, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, Response
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from .core.config import get_settings
 from .core.logger import get_logger
-from .core.redis import redis_manager
 from .core.auth import clerk_manager
 from .core.openapi import OpenAPIConfig, setup_openapi_documentation
-from .services.aws_service_factory import AWSServiceFactory
-from src.config.aws_config import AWSConfigManager
-from .middleware import (
-    setup_cors_middleware,
-    setup_logging_middleware,
-    setup_compression_middleware,
-    setup_security_middleware,
-    setup_performance_middleware,
-    setup_async_middleware,
-    ClerkAuthMiddleware,
+from .core.service_factory import (
+    ApplicationServiceFactory, 
+    initialize_service_factory, 
+    cleanup_service_factory,
+    get_service_factory
 )
+from .core.container import setup_service_container, initialize_container, cleanup_container
+from src.config.aws_config import AWSConfigManager
+from .core.middleware_pipeline import setup_middleware_pipeline
 
 # Get settings and logger
 settings = get_settings()
 logger = get_logger(__name__)
 
-# Global AWS service factory instance
-aws_service_factory: Optional[AWSServiceFactory] = None
+# Global service factory instance (managed via DI container)
+service_factory: Optional[ApplicationServiceFactory] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Application lifespan manager.
-    Handles startup and shutdown events.
+    Application lifespan manager with dependency injection and service factory.
+    Handles startup and shutdown events with proper service lifecycle management.
     """
-    global aws_service_factory
+    global service_factory
     
     # Startup
     logger.info(
-        "Starting FastAPI Video Backend",
+        "Starting FastAPI Video Backend with DI Container",
         app_name=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
         debug=settings.debug,
     )
     
-    # Initialize AWS Service Factory
     try:
-        logger.info("Initializing AWS Service Factory...")
-        aws_config = AWSConfigManager.load_config(settings.environment)
-        aws_service_factory = AWSServiceFactory(aws_config)
+        # Step 1: Setup dependency injection container
+        logger.info("Setting up dependency injection container")
+        container = setup_service_container()
         
-        # Initialize the factory
-        initialization_success = await aws_service_factory.initialize()
-        if not initialization_success:
-            raise RuntimeError("AWS Service Factory initialization failed")
-        
-        logger.info("AWS Service Factory initialized successfully")
-        
-        # Store factory in app state for access in dependencies
-        app.state.aws_service_factory = aws_service_factory
-        
-    except Exception as e:
-        logger.error("Failed to initialize AWS Service Factory", extra={"error": str(e)}, exc_info=True)
-        if settings.is_production:
-            raise
-        else:
-            logger.warning("Continuing without AWS services in development mode")
-            aws_service_factory = None
-    
-    # Initialize Redis connection pool (optional for caching)
-    try:
-        await redis_manager.initialize()
-        logger.info("Redis connection initialized successfully")
-    except Exception as e:
-        logger.error("Failed to initialize Redis", extra={"error": str(e)}, exc_info=True)
-        # Don't fail startup for Redis issues in development
-        if settings.is_production:
-            raise
-    
-    # Initialize Clerk authentication
-    try:
-        clerk_manager.initialize()
-        logger.info("Clerk authentication initialized successfully")
-    except Exception as e:
-        logger.error("Failed to initialize Clerk", extra={"error": str(e)}, exc_info=True)
-        # Don't fail startup for Clerk issues in development
-        if settings.is_production:
-            raise
-    
-    logger.info("Application startup completed")
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down application")
-    
-    # Close AWS Service Factory
-    if aws_service_factory:
+        # Step 2: Initialize service factory with AWS configuration
+        logger.info("Initializing service factory")
+        aws_config = None
         try:
-            await aws_service_factory.close()
-            logger.info("AWS Service Factory closed")
+            aws_config = AWSConfigManager.load_config(settings.environment)
         except Exception as e:
-            logger.error("Error closing AWS Service Factory", extra={"error": str(e)}, exc_info=True)
+            logger.warning(f"AWS configuration not available: {e}")
+            if settings.is_production:
+                logger.error("AWS configuration required in production")
+                raise
+        
+        service_factory = await initialize_service_factory(
+            aws_config=aws_config,
+            container=container
+        )
+        
+        # Step 3: Store service factory in app state for dependencies
+        app.state.service_factory = service_factory
+        app.state.container = container
+        
+        # For backward compatibility, also store AWS service factory
+        aws_service_factory = None
+        if service_factory.aws_service_factory:
+            aws_service_factory = service_factory.aws_service_factory
+            app.state.aws_service_factory = aws_service_factory
+        
+        # Step 4: Initialize Clerk authentication
+        try:
+            clerk_manager.initialize()
+            logger.info("Clerk authentication initialized successfully")
+        except Exception as e:
+            logger.error("Failed to initialize Clerk", extra={"error": str(e)}, exc_info=True)
+            if settings.is_production:
+                raise
+        
+        logger.info("Application startup completed successfully")
+        
+        yield
+        
+        # Shutdown
+        logger.info("Shutting down application")
+        
+        try:
+            # Step 1: Cleanup service factory (includes AWS services)
+            if service_factory:
+                logger.info("Cleaning up service factory")
+                await service_factory.cleanup()
+            
+            # Step 2: Cleanup DI container
+            logger.info("Cleaning up dependency injection container") 
+            await cleanup_container()
+            
+            # Step 3: Final cleanup
+            await cleanup_service_factory()
+            
+            logger.info("Application shutdown completed successfully")
+            
+        except Exception as e:
+            logger.error("Error during application shutdown", extra={"error": str(e)}, exc_info=True)
     
-    # Close Redis connections
-    try:
-        await redis_manager.close()
-        logger.info("Redis connections closed")
     except Exception as e:
-        logger.error("Error closing Redis connections", extra={"error": str(e)}, exc_info=True)
-    
-    logger.info("Application shutdown completed")
+        logger.error("Failed to start application", extra={"error": str(e)}, exc_info=True)
+        
+        # Attempt emergency cleanup
+        try:
+            if service_factory:
+                await service_factory.cleanup()
+            await cleanup_container()
+            await cleanup_service_factory()
+        except Exception as cleanup_error:
+            logger.error("Error during emergency cleanup", extra={"error": str(cleanup_error)})
+        
+        raise
 
 
 def create_application() -> FastAPI:
@@ -188,46 +196,8 @@ def setup_middleware(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
-    # Trusted host middleware (security) - should be first
-    if settings.is_production:
-        app.add_middleware(
-            TrustedHostMiddleware,
-            allowed_hosts=["*"]  # TODO: Configure with actual allowed hosts
-        )
-    
-    # Security headers middleware - early in the chain
-    setup_security_middleware(app)
-    
-    # CORS middleware - before authentication
-    setup_cors_middleware(app)
-    
-    # Response compression middleware
-    setup_compression_middleware(app)
-    
-    # Performance optimization middleware
-    setup_performance_middleware(app)
-    setup_async_middleware(app)
-    
-    # Request logging middleware with performance metrics
-    setup_logging_middleware(app)
-    
-    # Clerk authentication middleware - after logging but before business logic
-    app.add_middleware(
-        ClerkAuthMiddleware,
-        exclude_paths=[
-            "/",
-            "/health",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-            "/favicon.ico",
-            "/.well-known/appspecific/com.chrome.devtools.json",  # Chrome DevTools
-            "/api/docs",  # Alternative docs path
-            "/api/v1/system/health",
-            "/api/v1/auth/health",
-            "/api/v1/auth/status"  # This endpoint handles optional auth internally
-        ]
-    )
+    # Delegate to the centralized, configurable middleware pipeline
+    setup_middleware_pipeline(app)
 
 
 def setup_routers(app: FastAPI) -> None:
@@ -239,7 +209,7 @@ def setup_routers(app: FastAPI) -> None:
     """
     # Health check endpoint
     @app.get("/health")
-    async def health_check():
+    async def health_check(request: Request):
         """Basic health check endpoint."""
         return {
             "status": "healthy",
@@ -248,11 +218,38 @@ def setup_routers(app: FastAPI) -> None:
             "environment": settings.environment,
         }
     
-    # AWS services health check endpoint
+    # Service factory health check endpoint
+    @app.get("/health/services")
+    async def services_health_check(request: Request):
+        """Service factory and DI container health check endpoint."""
+        service_factory = getattr(request.app.state, 'service_factory', None)
+        
+        if not service_factory:
+            return {
+                "status": "unavailable",
+                "message": "Service factory not initialized",
+                "services": {}
+            }
+        
+        try:
+            health_status = service_factory.get_health_status()
+            return health_status
+        except Exception as e:
+            logger.error("Service factory health check failed", extra={"error": str(e)}, exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Health check failed: {str(e)}",
+                "services": {}
+            }
+    
+    # AWS services health check endpoint (for backward compatibility)
     @app.get("/health/aws")
-    async def aws_health_check():
+    async def aws_health_check(request: Request):
         """AWS services health check endpoint."""
-        if not aws_service_factory:
+        service_factory = getattr(request.app.state, 'service_factory', None)
+        aws_service_factory = getattr(request.app.state, 'aws_service_factory', None)
+        
+        if not service_factory or not aws_service_factory:
             return {
                 "status": "unavailable",
                 "message": "AWS Service Factory not initialized",
@@ -272,8 +269,12 @@ def setup_routers(app: FastAPI) -> None:
     
     # Detailed health check endpoint
     @app.get("/health/detailed")
-    async def detailed_health_check():
-        """Detailed health check including all services."""
+    async def detailed_health_check(request: Request):
+        """Detailed health check including all services and DI container."""
+        service_factory = getattr(request.app.state, 'service_factory', None)
+        aws_service_factory = getattr(request.app.state, 'aws_service_factory', None)
+        container = getattr(request.app.state, 'container', None)
+        
         health_info = {
             "app": {
                 "status": "healthy",
@@ -281,20 +282,30 @@ def setup_routers(app: FastAPI) -> None:
                 "version": settings.app_version,
                 "environment": settings.environment,
             },
-            "redis": {"status": "unknown"},
+            "dependency_injection": {"status": "unknown"},
+            "service_factory": {"status": "unknown"},
             "aws": {"status": "unknown"}
         }
         
-        # Check Redis health
-        try:
-            if redis_manager and redis_manager.redis_client:
-                await redis_manager.redis_client.ping()
-                health_info["redis"]["status"] = "healthy"
-            else:
-                health_info["redis"]["status"] = "not_initialized"
-        except Exception as e:
-            health_info["redis"]["status"] = "unhealthy"
-            health_info["redis"]["error"] = str(e)
+        # Check DI container health
+        if container:
+            try:
+                container_health = container.get_health_status()
+                health_info["dependency_injection"] = container_health
+            except Exception as e:
+                health_info["dependency_injection"] = {"status": "error", "error": str(e)}
+        else:
+            health_info["dependency_injection"] = {"status": "not_initialized"}
+        
+        # Check service factory health
+        if service_factory:
+            try:
+                factory_health = service_factory.get_health_status()
+                health_info["service_factory"] = factory_health
+            except Exception as e:
+                health_info["service_factory"] = {"status": "error", "error": str(e)}
+        else:
+            health_info["service_factory"] = {"status": "not_initialized"}
         
         # Check AWS health
         if aws_service_factory:
@@ -302,16 +313,21 @@ def setup_routers(app: FastAPI) -> None:
                 aws_health = await aws_service_factory.health_check()
                 health_info["aws"] = aws_health
             except Exception as e:
-                health_info["aws"]["status"] = "error"
-                health_info["aws"]["error"] = str(e)
+                health_info["aws"] = {"status": "error", "error": str(e)}
         else:
-            health_info["aws"]["status"] = "not_initialized"
+            health_info["aws"] = {"status": "not_available"}
         
         # Determine overall status
         overall_status = "healthy"
-        if health_info["aws"]["overall_status"] != "healthy":
+        
+        # Check critical components
+        if (health_info["dependency_injection"].get("health") != "healthy" or
+            health_info["service_factory"].get("health") != "healthy"):
             overall_status = "degraded"
-        if health_info["redis"]["status"] == "unhealthy":
+        
+        # AWS is optional, so only degrade if it was expected to be available
+        if (aws_service_factory and 
+            health_info["aws"].get("overall_status") != "healthy"):
             overall_status = "degraded"
         
         return {
@@ -357,47 +373,28 @@ def setup_routers(app: FastAPI) -> None:
 
 def setup_exception_handlers(app: FastAPI) -> None:
     """
-    Configure global exception handlers.
+    Configure enhanced global exception handlers with correlation IDs,
+    structured logging, and comprehensive error response formatting.
     
     Args:
         app: FastAPI application instance
     """
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Handle unexpected exceptions."""
-        logger.error(
-            "Unhandled exception",
-            extra={
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-                "url": str(request.url),
-                "method": request.method,
-            },
-            exc_info=True,
-        )
-        
-        # Don't expose internal errors in production
-        if settings.is_production:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": {
-                        "message": "Internal server error",
-                        "error_code": "INTERNAL_ERROR",
-                    }
-                }
-            )
-        else:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": {
-                        "message": str(exc),
-                        "error_code": "INTERNAL_ERROR",
-                        "type": type(exc).__name__,
-                    }
-                }
-            )
+    from .core.enhanced_exception_handlers import setup_enhanced_exception_handlers
+    
+    # Set up enhanced exception handlers with debug mode based on settings
+    handler = setup_enhanced_exception_handlers(
+        app=app,
+        debug=settings.debug
+    )
+    
+    logger.info(
+        "Enhanced exception handlers configured",
+        extra={
+            "debug_mode": settings.debug,
+            "include_traceback": settings.debug,
+            "environment": settings.environment
+        }
+    )
 
 
 # Create application instance

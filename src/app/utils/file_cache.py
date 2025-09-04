@@ -2,20 +2,21 @@
 File caching utilities for improved performance.
 
 This module provides caching strategies for file metadata,
-thumbnails, and frequently accessed files.
+thumbnails, and frequently accessed files using database storage.
 """
 
 import asyncio
 import hashlib
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import aiofiles
 
-from redis.asyncio import Redis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.redis import get_redis, redis_json_get, redis_json_set
 from ..core.config import get_settings
 from ..core.logger import get_logger
 
@@ -23,11 +24,98 @@ settings = get_settings()
 logger = get_logger(__name__)
 
 
-class FileCacheManager:
-    """Manager for file caching operations."""
+# Thread-safe in-memory cache with TTL support
+class InMemoryCache:
+    """Thread-safe in-memory cache with TTL support."""
     
-    def __init__(self, redis_client: Optional[Redis] = None):
-        self.redis_client = redis_client
+    def __init__(self):
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.RLock()
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get value from cache if not expired."""
+        with self._lock:
+            if key not in self._cache:
+                return None
+            
+            entry = self._cache[key]
+            if entry['expires_at'] and datetime.utcnow() > entry['expires_at']:
+                del self._cache[key]
+                return None
+            
+            return entry['value']
+    
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        """Set value in cache with optional TTL."""
+        with self._lock:
+            expires_at = None
+            if ttl:
+                expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+            
+            self._cache[key] = {
+                'value': value,
+                'expires_at': expires_at,
+                'created_at': datetime.utcnow()
+            }
+    
+    def delete(self, key: str) -> bool:
+        """Delete key from cache."""
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
+                return True
+            return False
+    
+    def delete_pattern(self, pattern: str) -> int:
+        """Delete keys matching pattern (simple wildcard support)."""
+        with self._lock:
+            if '*' not in pattern:
+                return 1 if self.delete(pattern) else 0
+            
+            prefix = pattern.replace('*', '')
+            keys_to_delete = [k for k in self._cache.keys() if k.startswith(prefix)]
+            
+            for key in keys_to_delete:
+                del self._cache[key]
+            
+            return len(keys_to_delete)
+    
+    def clear_expired(self) -> int:
+        """Clear expired entries and return count."""
+        with self._lock:
+            now = datetime.utcnow()
+            expired_keys = [
+                key for key, entry in self._cache.items()
+                if entry['expires_at'] and now > entry['expires_at']
+            ]
+            
+            for key in expired_keys:
+                del self._cache[key]
+            
+            return len(expired_keys)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        with self._lock:
+            total_entries = len(self._cache)
+            expired_entries = self.clear_expired()
+            
+            return {
+                'total_entries': total_entries,
+                'expired_cleaned': expired_entries,
+                'memory_usage': f"{len(str(self._cache))} bytes (approx)"
+            }
+
+
+# Global cache instance
+_cache = InMemoryCache()
+
+
+class FileCacheManager:
+    """Manager for file caching operations using database and in-memory cache."""
+    
+    def __init__(self, db_session: Optional[AsyncSession] = None):
+        self.db_session = db_session
         self.cache_ttl = {
             'metadata': 3600,      # 1 hour
             'thumbnail': 86400,    # 1 day
@@ -42,7 +130,7 @@ class FileCacheManager:
         ttl: Optional[int] = None
     ) -> bool:
         """
-        Cache file metadata in Redis.
+        Cache file metadata in memory and database.
         
         Args:
             file_id: File identifier
@@ -53,18 +141,19 @@ class FileCacheManager:
             True if cached successfully
         """
         try:
-            if not self.redis_client:
-                return False
-            
+            # Cache in memory for fast access
             cache_key = f"file_cache:metadata:{file_id}"
             cache_ttl = ttl or self.cache_ttl['metadata']
             
-            await redis_json_set(
-                self.redis_client,
-                cache_key,
-                metadata,
-                ex=cache_ttl
-            )
+            _cache.set(cache_key, metadata, cache_ttl)
+            
+            # Store in database for persistence
+            if self.db_session:
+                await self._store_cache_entry(
+                    key=cache_key,
+                    value=metadata,
+                    expires_at=datetime.utcnow() + timedelta(seconds=cache_ttl)
+                )
             
             logger.debug(f"Cached metadata for file {file_id}")
             return True
@@ -75,7 +164,7 @@ class FileCacheManager:
     
     async def get_cached_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get cached file metadata.
+        Get cached file metadata from memory or database.
         
         Args:
             file_id: File identifier
@@ -84,11 +173,22 @@ class FileCacheManager:
             Cached metadata or None if not found
         """
         try:
-            if not self.redis_client:
-                return None
-            
             cache_key = f"file_cache:metadata:{file_id}"
-            return await redis_json_get(self.redis_client, cache_key)
+            
+            # Try memory cache first
+            cached_data = _cache.get(cache_key)
+            if cached_data is not None:
+                return cached_data
+            
+            # Fallback to database
+            if self.db_session:
+                db_entry = await self._get_cache_entry(cache_key)
+                if db_entry:
+                    # Restore to memory cache
+                    _cache.set(cache_key, db_entry['value'], self.cache_ttl['metadata'])
+                    return db_entry['value']
+            
+            return None
             
         except Exception as e:
             logger.error(f"Failed to get cached metadata: {e}")
@@ -114,13 +214,18 @@ class FileCacheManager:
             True if cached successfully
         """
         try:
-            if not self.redis_client:
-                return False
-            
             cache_key = f"file_cache:thumbnail:{file_id}:{size}"
             cache_ttl = ttl or self.cache_ttl['thumbnail']
             
-            await self.redis_client.set(cache_key, thumbnail_path, ex=cache_ttl)
+            _cache.set(cache_key, thumbnail_path, cache_ttl)
+            
+            # Store in database for persistence
+            if self.db_session:
+                await self._store_cache_entry(
+                    key=cache_key,
+                    value=thumbnail_path,
+                    expires_at=datetime.utcnow() + timedelta(seconds=cache_ttl)
+                )
             
             logger.debug(f"Cached thumbnail path for file {file_id}, size {size}")
             return True
@@ -145,13 +250,22 @@ class FileCacheManager:
             Cached thumbnail path or None if not found
         """
         try:
-            if not self.redis_client:
-                return None
-            
             cache_key = f"file_cache:thumbnail:{file_id}:{size}"
-            result = await self.redis_client.get(cache_key)
             
-            return result.decode() if isinstance(result, bytes) else result
+            # Try memory cache first
+            cached_path = _cache.get(cache_key)
+            if cached_path is not None:
+                return cached_path
+            
+            # Fallback to database
+            if self.db_session:
+                db_entry = await self._get_cache_entry(cache_key)
+                if db_entry:
+                    # Restore to memory cache
+                    _cache.set(cache_key, db_entry['value'], self.cache_ttl['thumbnail'])
+                    return db_entry['value']
+            
+            return None
             
         except Exception as e:
             logger.error(f"Failed to get cached thumbnail path: {e}")
@@ -175,13 +289,10 @@ class FileCacheManager:
             True if cached successfully
         """
         try:
-            if not self.redis_client:
-                return False
-            
-            # Increment access counter
+            # Increment access counter in memory
             counter_key = f"file_cache:access_count:{file_id}"
-            await self.redis_client.incr(counter_key)
-            await self.redis_client.expire(counter_key, 86400)  # 1 day
+            current_count = _cache.get(counter_key) or 0
+            _cache.set(counter_key, current_count + 1, 86400)  # 1 day
             
             # Store recent access
             access_key = f"file_cache:recent_access:{file_id}"
@@ -191,10 +302,19 @@ class FileCacheManager:
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            # Add to list (keep last 100 accesses)
-            await self.redis_client.lpush(access_key, json.dumps(access_data))
-            await self.redis_client.ltrim(access_key, 0, 99)
-            await self.redis_client.expire(access_key, 86400)  # 1 day
+            # Get current access list and add new access
+            recent_accesses = _cache.get(access_key) or []
+            recent_accesses.insert(0, access_data)
+            
+            # Keep only last 100 accesses
+            if len(recent_accesses) > 100:
+                recent_accesses = recent_accesses[:100]
+            
+            _cache.set(access_key, recent_accesses, 86400)  # 1 day
+            
+            # Persist to database if available
+            if self.db_session:
+                await self._store_access_stats_to_db(file_id, user_id, access_type)
             
             logger.debug(f"Cached access stats for file {file_id}")
             return True
@@ -214,25 +334,16 @@ class FileCacheManager:
             Dictionary with access statistics
         """
         try:
-            if not self.redis_client:
-                return {}
-            
-            # Get access count
+            # Get access count from memory
             counter_key = f"file_cache:access_count:{file_id}"
-            access_count = await self.redis_client.get(counter_key)
-            access_count = int(access_count) if access_count else 0
+            access_count = _cache.get(counter_key) or 0
             
-            # Get recent accesses
+            # Get recent accesses from memory
             access_key = f"file_cache:recent_access:{file_id}"
-            recent_accesses = await self.redis_client.lrange(access_key, 0, 9)  # Last 10
+            recent_accesses = _cache.get(access_key) or []
             
-            recent_access_data = []
-            for access in recent_accesses:
-                try:
-                    access_data = json.loads(access.decode() if isinstance(access, bytes) else access)
-                    recent_access_data.append(access_data)
-                except json.JSONDecodeError:
-                    continue
+            # Get only last 10 for response
+            recent_access_data = recent_accesses[:10] if recent_accesses else []
             
             return {
                 "total_accesses": access_count,
@@ -261,13 +372,18 @@ class FileCacheManager:
             True if cached successfully
         """
         try:
-            if not self.redis_client:
-                return False
-            
             cache_key = f"file_cache:hash:{hashlib.md5(file_path.encode()).hexdigest()}"
             cache_ttl = ttl or self.cache_ttl['file_content']
             
-            await self.redis_client.set(cache_key, content_hash, ex=cache_ttl)
+            _cache.set(cache_key, content_hash, cache_ttl)
+            
+            # Store in database for persistence
+            if self.db_session:
+                await self._store_cache_entry(
+                    key=cache_key,
+                    value=content_hash,
+                    expires_at=datetime.utcnow() + timedelta(seconds=cache_ttl)
+                )
             
             logger.debug(f"Cached content hash for file {file_path}")
             return True
@@ -287,13 +403,22 @@ class FileCacheManager:
             Cached content hash or None if not found
         """
         try:
-            if not self.redis_client:
-                return None
-            
             cache_key = f"file_cache:hash:{hashlib.md5(file_path.encode()).hexdigest()}"
-            result = await self.redis_client.get(cache_key)
             
-            return result.decode() if isinstance(result, bytes) else result
+            # Try memory cache first
+            cached_hash = _cache.get(cache_key)
+            if cached_hash is not None:
+                return cached_hash
+            
+            # Fallback to database
+            if self.db_session:
+                db_entry = await self._get_cache_entry(cache_key)
+                if db_entry:
+                    # Restore to memory cache
+                    _cache.set(cache_key, db_entry['value'], self.cache_ttl['file_content'])
+                    return db_entry['value']
+            
+            return None
             
         except Exception as e:
             logger.error(f"Failed to get cached content hash: {e}")
@@ -310,27 +435,27 @@ class FileCacheManager:
             True if invalidated successfully
         """
         try:
-            if not self.redis_client:
-                return False
-            
             # Get all cache keys for this file
             patterns = [
                 f"file_cache:metadata:{file_id}",
-                f"file_cache:thumbnail:{file_id}:*",
+                f"file_cache:thumbnail:{file_id}:",  # prefix for wildcard matching
                 f"file_cache:access_count:{file_id}",
                 f"file_cache:recent_access:{file_id}"
             ]
             
             deleted_count = 0
             for pattern in patterns:
-                if '*' in pattern:
+                if pattern.endswith(':'):
                     # Handle wildcard patterns
-                    keys = await self.redis_client.keys(pattern)
-                    if keys:
-                        deleted_count += await self.redis_client.delete(*keys)
+                    deleted_count += _cache.delete_pattern(pattern + '*')
                 else:
                     # Handle exact keys
-                    deleted_count += await self.redis_client.delete(pattern)
+                    if _cache.delete(pattern):
+                        deleted_count += 1
+            
+            # Also invalidate from database if available
+            if self.db_session:
+                await self._invalidate_cache_entries_from_db(file_id)
             
             logger.info(f"Invalidated {deleted_count} cache entries for file {file_id}")
             return True
@@ -347,27 +472,19 @@ class FileCacheManager:
             Dictionary with cleanup statistics
         """
         try:
-            if not self.redis_client:
-                return {"cleaned": 0}
+            # Clean up expired entries from memory cache
+            expired_count = _cache.clear_expired()
             
-            # Redis automatically handles TTL expiration, but we can clean up
-            # any orphaned entries or perform maintenance
+            # Get cache statistics
+            cache_stats = _cache.get_stats()
+            total_entries = cache_stats['total_entries']
             
-            # Get all file cache keys
-            cache_patterns = [
-                "file_cache:metadata:*",
-                "file_cache:thumbnail:*",
-                "file_cache:hash:*"
-            ]
+            logger.info(f"File cache cleanup: {expired_count} expired entries removed, {total_entries} total entries")
             
-            total_keys = 0
-            for pattern in cache_patterns:
-                keys = await self.redis_client.keys(pattern)
-                total_keys += len(keys)
-            
-            logger.info(f"File cache contains {total_keys} entries")
-            
-            return {"total_entries": total_keys, "cleaned": 0}
+            return {
+                "total_entries": total_entries,
+                "cleaned": expired_count
+            }
             
         except Exception as e:
             logger.error(f"Failed to cleanup cache: {e}")
@@ -381,29 +498,31 @@ class FileCacheManager:
             Dictionary with cache statistics
         """
         try:
-            if not self.redis_client:
-                return {}
+            # Get statistics from memory cache
+            cache_stats = _cache.get_stats()
             
-            stats = {}
-            
-            # Count entries by type
-            cache_types = {
-                "metadata": "file_cache:metadata:*",
-                "thumbnails": "file_cache:thumbnail:*",
-                "access_counts": "file_cache:access_count:*",
-                "content_hashes": "file_cache:hash:*"
+            # Count entries by type from memory
+            stats = {
+                "total_entries": cache_stats['total_entries'],
+                "memory_usage": cache_stats['memory_usage'],
+                "expired_cleaned": cache_stats['expired_cleaned']
             }
             
-            for cache_type, pattern in cache_types.items():
-                keys = await self.redis_client.keys(pattern)
-                stats[f"{cache_type}_count"] = len(keys)
+            # Count specific cache types
+            cache_types = {
+                "metadata": "file_cache:metadata:",
+                "thumbnails": "file_cache:thumbnail:",
+                "access_counts": "file_cache:access_count:",
+                "content_hashes": "file_cache:hash:"
+            }
             
-            # Get memory usage info if available
-            try:
-                info = await self.redis_client.info("memory")
-                stats["memory_used"] = info.get("used_memory_human", "unknown")
-            except Exception:
-                pass
+            for cache_type, prefix in cache_types.items():
+                count = 0
+                with _cache._lock:
+                    for key in _cache._cache.keys():
+                        if key.startswith(prefix):
+                            count += 1
+                stats[f"{cache_type}_count"] = count
             
             return stats
             
@@ -422,23 +541,16 @@ class FileCacheManager:
             Dictionary with warming statistics
         """
         try:
-            if not self.redis_client:
-                return {"warmed": 0}
-            
-            # Get most accessed files
-            access_pattern = "file_cache:access_count:*"
-            access_keys = await self.redis_client.keys(access_pattern)
-            
-            # Get access counts and sort
+            # Get most accessed files from memory cache
+            access_pattern = "file_cache:access_count:"
             file_access_counts = []
-            for key in access_keys:
-                try:
-                    count = await self.redis_client.get(key)
-                    if count:
-                        file_id = key.decode().split(':')[-1] if isinstance(key, bytes) else key.split(':')[-1]
-                        file_access_counts.append((file_id, int(count)))
-                except Exception:
-                    continue
+            
+            with _cache._lock:
+                for key, entry in _cache._cache.items():
+                    if key.startswith(access_pattern):
+                        file_id = key.replace(access_pattern, '')
+                        access_count = entry['value']
+                        file_access_counts.append((file_id, access_count))
             
             # Sort by access count (descending)
             file_access_counts.sort(key=lambda x: x[1], reverse=True)
@@ -447,9 +559,9 @@ class FileCacheManager:
             warmed_count = 0
             for file_id, access_count in file_access_counts[:limit]:
                 try:
-                    # Pre-load metadata if not cached
+                    # Check if metadata is cached
                     metadata_key = f"file_cache:metadata:{file_id}"
-                    if not await self.redis_client.exists(metadata_key):
+                    if _cache.get(metadata_key) is None:
                         # This would typically load from primary storage
                         # For now, we'll just mark it as a candidate for warming
                         logger.debug(f"Cache warming candidate: {file_id} (access count: {access_count})")
@@ -479,47 +591,210 @@ class FileCacheManager:
             Dictionary with eviction statistics
         """
         try:
-            if not self.redis_client:
-                return {"evicted": 0}
-            
             evicted_count = 0
             
-            # Get all metadata cache keys with their TTL
-            metadata_pattern = "file_cache:metadata:*"
-            metadata_keys = await self.redis_client.keys(metadata_pattern)
+            # Get all metadata cache keys
+            metadata_pattern = "file_cache:metadata:"
             
-            # Check each key's TTL and access patterns
-            for key in metadata_keys:
-                try:
-                    ttl = await self.redis_client.ttl(key)
-                    
-                    # If TTL is very low (< 300 seconds), consider for eviction
-                    if 0 < ttl < 300:
-                        # Check if file has been accessed recently
-                        file_id = key.decode().split(':')[-1] if isinstance(key, bytes) else key.split(':')[-1]
-                        access_key = f"file_cache:recent_access:{file_id}"
-                        
-                        recent_accesses = await self.redis_client.llen(access_key)
-                        
-                        # If no recent accesses, evict early
-                        if recent_accesses == 0:
-                            await self.redis_client.delete(key)
-                            evicted_count += 1
-                            logger.debug(f"Evicted cache entry: {file_id}")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to process cache key {key}: {e}")
+            with _cache._lock:
+                keys_to_evict = []
+                now = datetime.utcnow()
+                
+                for key, entry in _cache._cache.items():
+                    if key.startswith(metadata_pattern):
+                        # Check if entry is close to expiration (< 5 minutes)
+                        if entry['expires_at'] and (entry['expires_at'] - now).total_seconds() < 300:
+                            file_id = key.replace(metadata_pattern, '')
+                            
+                            # Check if file has been accessed recently
+                            access_key = f"file_cache:recent_access:{file_id}"
+                            recent_accesses = _cache.get(access_key) or []
+                            
+                            # If no recent accesses, mark for eviction
+                            if not recent_accesses:
+                                keys_to_evict.append(key)
+                
+                # Evict identified keys
+                for key in keys_to_evict:
+                    if key in _cache._cache:
+                        del _cache._cache[key]
+                        evicted_count += 1
+                        file_id = key.replace(metadata_pattern, '')
+                        logger.debug(f"Evicted cache entry: {file_id}")
             
             logger.info(f"Cache eviction completed: {evicted_count} entries evicted")
             
             return {
                 "evicted": evicted_count,
-                "total_checked": len(metadata_keys)
+                "total_checked": len([k for k in _cache._cache.keys() if k.startswith(metadata_pattern)])
             }
             
         except Exception as e:
             logger.error(f"Failed to implement cache eviction: {e}")
             return {"evicted": 0}
+    
+    # Database helper methods
+    async def _store_cache_entry(
+        self,
+        key: str,
+        value: Any,
+        expires_at: datetime
+    ) -> bool:
+        """
+        Store cache entry in database for persistence.
+        
+        Args:
+            key: Cache key
+            value: Value to store
+            expires_at: Expiration timestamp
+            
+        Returns:
+            True if stored successfully
+        """
+        try:
+            if not self.db_session:
+                return False
+            
+            # Store as JSON in a simple cache table
+            # This would require a cache table to be created
+            query = text("""
+                INSERT INTO cache_entries (cache_key, cache_value, expires_at, created_at)
+                VALUES (:key, :value, :expires_at, :created_at)
+                ON CONFLICT (cache_key) DO UPDATE SET
+                    cache_value = EXCLUDED.cache_value,
+                    expires_at = EXCLUDED.expires_at,
+                    updated_at = CURRENT_TIMESTAMP
+            """)
+            
+            await self.db_session.execute(query, {
+                'key': key,
+                'value': json.dumps(value) if not isinstance(value, str) else value,
+                'expires_at': expires_at,
+                'created_at': datetime.utcnow()
+            })
+            await self.db_session.commit()
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to store cache entry in database: {e}")
+            if self.db_session:
+                await self.db_session.rollback()
+            return False
+    
+    async def _get_cache_entry(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cache entry from database.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            Cache entry or None if not found or expired
+        """
+        try:
+            if not self.db_session:
+                return None
+            
+            query = text("""
+                SELECT cache_value, expires_at
+                FROM cache_entries
+                WHERE cache_key = :key
+                    AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+            """)
+            
+            result = await self.db_session.execute(query, {'key': key})
+            row = result.fetchone()
+            
+            if not row:
+                return None
+            
+            try:
+                value = json.loads(row.cache_value) if row.cache_value.startswith(('{', '[', '"')) else row.cache_value
+            except (json.JSONDecodeError, AttributeError):
+                value = row.cache_value
+            
+            return {'value': value}
+            
+        except Exception as e:
+            logger.warning(f"Failed to get cache entry from database: {e}")
+            return None
+    
+    async def _store_access_stats_to_db(
+        self,
+        file_id: str,
+        user_id: str,
+        access_type: str
+    ) -> bool:
+        """
+        Store file access statistics to database.
+        
+        Args:
+            file_id: File identifier
+            user_id: User who accessed the file
+            access_type: Type of access
+            
+        Returns:
+            True if stored successfully
+        """
+        try:
+            if not self.db_session:
+                return False
+            
+            # Store access log in database
+            query = text("""
+                INSERT INTO file_access_logs (file_id, user_id, access_type, accessed_at)
+                VALUES (:file_id, :user_id, :access_type, :accessed_at)
+            """)
+            
+            await self.db_session.execute(query, {
+                'file_id': file_id,
+                'user_id': user_id,
+                'access_type': access_type,
+                'accessed_at': datetime.utcnow()
+            })
+            await self.db_session.commit()
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to store access stats to database: {e}")
+            if self.db_session:
+                await self.db_session.rollback()
+            return False
+    
+    async def _invalidate_cache_entries_from_db(self, file_id: str) -> bool:
+        """
+        Invalidate cache entries from database.
+        
+        Args:
+            file_id: File identifier
+            
+        Returns:
+            True if invalidated successfully
+        """
+        try:
+            if not self.db_session:
+                return False
+            
+            # Delete cache entries related to this file
+            query = text("""
+                DELETE FROM cache_entries
+                WHERE cache_key LIKE :pattern
+            """)
+            
+            await self.db_session.execute(query, {
+                'pattern': f"%{file_id}%"
+            })
+            await self.db_session.commit()
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache entries from database: {e}")
+            if self.db_session:
+                await self.db_session.rollback()
+            return False
 
 
 # Global cache manager instance
@@ -530,34 +805,38 @@ file_cache_manager = FileCacheManager()
 async def cache_file_metadata(
     file_id: str,
     metadata: Dict[str, Any],
-    ttl: Optional[int] = None
+    ttl: Optional[int] = None,
+    db_session: Optional[AsyncSession] = None
 ) -> bool:
     """Cache file metadata."""
-    redis_client = await get_redis()
-    cache_manager = FileCacheManager(redis_client)
+    cache_manager = FileCacheManager(db_session)
     return await cache_manager.cache_file_metadata(file_id, metadata, ttl)
 
 
-async def get_cached_file_metadata(file_id: str) -> Optional[Dict[str, Any]]:
+async def get_cached_file_metadata(
+    file_id: str,
+    db_session: Optional[AsyncSession] = None
+) -> Optional[Dict[str, Any]]:
     """Get cached file metadata."""
-    redis_client = await get_redis()
-    cache_manager = FileCacheManager(redis_client)
+    cache_manager = FileCacheManager(db_session)
     return await cache_manager.get_cached_metadata(file_id)
 
 
 async def track_file_access(
     file_id: str,
     user_id: str,
-    access_type: str = "download"
+    access_type: str = "download",
+    db_session: Optional[AsyncSession] = None
 ) -> bool:
     """Track file access for statistics."""
-    redis_client = await get_redis()
-    cache_manager = FileCacheManager(redis_client)
+    cache_manager = FileCacheManager(db_session)
     return await cache_manager.cache_file_access_stats(file_id, user_id, access_type)
 
 
-async def get_file_access_statistics(file_id: str) -> Dict[str, Any]:
+async def get_file_access_statistics(
+    file_id: str,
+    db_session: Optional[AsyncSession] = None
+) -> Dict[str, Any]:
     """Get file access statistics."""
-    redis_client = await get_redis()
-    cache_manager = FileCacheManager(redis_client)
+    cache_manager = FileCacheManager(db_session)
     return await cache_manager.get_file_access_stats(file_id)

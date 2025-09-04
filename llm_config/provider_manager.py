@@ -63,6 +63,29 @@ class EnhancedProviderManager(IProviderManager):
                 ],
                 'display_name': 'OpenRouter',
                 'description': 'Access multiple models through OpenRouter'
+            },
+            'AWS Bedrock': {
+                'api_key_env': 'AWS_ACCESS_KEY_ID',
+                'additional_env_vars': {
+                    'AWS_SECRET_ACCESS_KEY': 'AWS Secret Access Key',
+                    'AWS_REGION_NAME': 'AWS Region (e.g., us-west-2)'
+                },
+                'models': [
+                    'bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0',
+                    'bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0',
+                    'bedrock/anthropic.claude-3-5-haiku-20241022-v1:0',
+                    'bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+                    'bedrock/anthropic.claude-sonnet-4-20250115-v1:0',
+                    'bedrock/us.amazon.nova-pro-v1:0',
+                    'bedrock/us.amazon.nova-lite-v1:0',
+                    'bedrock/us.amazon.nova-micro-v1:0',
+                    'bedrock/meta.llama3-1-405b-instruct-v1:0',
+                    'bedrock/meta.llama3-1-70b-instruct-v1:0',
+                    'bedrock/cohere.command-r-plus-v1:0',
+                    'bedrock/mistral.mistral-large-2402-v1:0'
+                ],
+                'display_name': 'AWS Bedrock',
+                'description': 'Enterprise-grade models via AWS Bedrock'
             }
         }
         
@@ -73,6 +96,20 @@ class EnhancedProviderManager(IProviderManager):
             "openai/o3-mini": "⚡ OpenAI o3-mini - Fast reasoning model",
             "gemini/gemini-2.5-pro": "🎯 Google Gemini 2.5 Pro - Most advanced Gemini model",
             "anthropic/claude-3.5-sonnet": "📚 Claude 3.5 Sonnet - Excellent reasoning and analysis",
+            
+            # AWS Bedrock models
+            "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0": "☁️ Claude 3.5 Sonnet (Bedrock) - Excellent reasoning on AWS",
+            "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0": "☁️ Claude 3.5 Sonnet v2 (Bedrock) - Latest Claude 3.5 on AWS",
+            "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0": "☁️ Claude 3.5 Haiku (Bedrock) - Fast Claude model on AWS",
+            "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0": "☁️ Claude 3.7 Sonnet (Bedrock) - Advanced reasoning with thinking",
+            "bedrock/anthropic.claude-sonnet-4-20250115-v1:0": "☁️ Claude 4 Sonnet (Bedrock) - Latest Claude 4 on AWS",
+            "bedrock/us.amazon.nova-pro-v1:0": "☁️ Amazon Nova Pro (Bedrock) - Amazon's flagship model",
+            "bedrock/us.amazon.nova-lite-v1:0": "☁️ Amazon Nova Lite (Bedrock) - Fast Amazon model",
+            "bedrock/us.amazon.nova-micro-v1:0": "☁️ Amazon Nova Micro (Bedrock) - Ultra-fast Amazon model",
+            "bedrock/meta.llama3-1-405b-instruct-v1:0": "☁️ Llama 3.1 405B (Bedrock) - Meta's largest model on AWS",
+            "bedrock/meta.llama3-1-70b-instruct-v1:0": "☁️ Llama 3.1 70B (Bedrock) - Balanced Meta model on AWS",
+            "bedrock/cohere.command-r-plus-v1:0": "☁️ Cohere Command R+ (Bedrock) - Advanced Cohere model",
+            "bedrock/mistral.mistral-large-2402-v1:0": "☁️ Mistral Large (Bedrock) - Powerful Mistral model on AWS",
             
             # Additional models
             "openai/gpt-4": "🎯 Reliable and consistent, great for educational content",
@@ -130,13 +167,37 @@ class EnhancedProviderManager(IProviderManager):
         if provider not in self.providers_config:
             logger.error(f"Cannot set API key for unknown provider: {provider}")
             return
-        
+
         env_var = self.providers_config[provider]['api_key_env']
         os.environ[env_var] = api_key
         self.api_keys[provider] = api_key
         
         logger.info(f"API key set for provider: {provider}")
-    
+
+    def set_bedrock_credentials(self, aws_access_key_id: str, aws_secret_access_key: str, aws_region_name: str = "us-west-2") -> None:
+        """Set AWS Bedrock credentials."""
+        os.environ['AWS_ACCESS_KEY_ID'] = aws_access_key_id
+        os.environ['AWS_SECRET_ACCESS_KEY'] = aws_secret_access_key
+        os.environ['AWS_REGION_NAME'] = aws_region_name
+        
+        # Store in our internal storage as well
+        self.api_keys['AWS Bedrock'] = aws_access_key_id
+        
+        logger.info("AWS Bedrock credentials set successfully")
+
+    def get_bedrock_auth_requirements(self) -> Dict[str, str]:
+        """Get the authentication requirements for AWS Bedrock."""
+        return {
+            'AWS_ACCESS_KEY_ID': 'AWS Access Key ID',
+            'AWS_SECRET_ACCESS_KEY': 'AWS Secret Access Key',
+            'AWS_REGION_NAME': 'AWS Region (e.g., us-west-2, us-east-1)'
+        }
+
+    def has_bedrock_credentials(self) -> bool:
+        """Check if AWS Bedrock credentials are properly set."""
+        required_vars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION_NAME']
+        return all(os.environ.get(var) for var in required_vars)
+
     def get_api_key(self, provider: str) -> Optional[str]:
         """Get API key for a provider."""
         if provider not in self.providers_config:
@@ -152,6 +213,9 @@ class EnhancedProviderManager(IProviderManager):
     
     def has_api_key(self, provider: str) -> bool:
         """Check if provider has an API key set."""
+        if provider == 'AWS Bedrock':
+            return self.has_bedrock_credentials()
+        
         api_key = self.get_api_key(provider)
         return api_key is not None and api_key.strip() != ""
     

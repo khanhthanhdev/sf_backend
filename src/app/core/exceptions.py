@@ -79,3 +79,39 @@ class RateLimitError(T2MBaseException):
 class ValidationError(T2MBaseException):
     """Raised when input validation fails."""
     pass
+
+
+# Domain-specific exceptions for clean architecture
+class DomainError(T2MBaseException):
+    """Base exception for domain layer errors."""
+    pass
+
+
+class BusinessLogicError(DomainError):
+    """Exception raised for business rule violations."""
+    pass
+
+
+class NotFoundError(DomainError):
+    """Exception raised when a domain entity is not found."""
+    pass
+
+
+class RepositoryError(T2MBaseException):
+    """Exception raised for repository operation errors."""
+    pass
+
+
+class UnitOfWorkError(T2MBaseException):
+    """Exception raised for unit of work operation errors."""
+    pass
+
+
+class EventHandlerError(T2MBaseException):
+    """Exception raised for event handler errors."""
+    pass
+
+
+class EventPublisherError(T2MBaseException):
+    """Exception raised for event publisher errors."""
+    pass

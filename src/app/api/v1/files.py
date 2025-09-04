@@ -32,12 +32,33 @@ from ...services.aws_s3_file_service import AWSS3FileService
 from ...api.dependencies import get_current_user, get_file_service, get_aws_file_service
 from ...utils.file_utils import FileMetadata
 from ...utils.aws_error_handler import handle_aws_service_error, log_aws_error
+from ...utils.http_cache import compute_etag, set_cache_headers, not_modified
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/upload",
+    response_model=FileUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload File",
+    description=(
+        "Upload a single file. Supports images, video, audio, documents, archives.\n\n"
+        "Authentication: `Authorization: Bearer <token>`.\n\n"
+        "Multipart fields: `file` (required), `file_type`, `subdirectory`, `description`."
+    ),
+    responses={
+        201: {
+            "description": "File uploaded",
+            "content": {"application/json": {"example": {"file_id": "file_123", "filename": "lesson.mp4", "file_type": "video", "file_size": 15728640, "download_url": "/api/v1/files/file_123/download", "created_at": "2024-09-04T09:10:00Z"}}}
+        },
+        400: {"description": "Invalid request", "content": {"application/json": {"example": {"message": "Invalid file type", "error": {"code": "VALIDATION_ERROR"}}}}},
+        401: {"description": "Unauthorized"},
+        413: {"description": "Payload too large"},
+        429: {"description": "Rate limit exceeded"}
+    }
+)
 async def upload_file(
     file: UploadFile = File(..., description="File to upload"),
     file_type: Optional[FileType] = Form(None, description="File type category"),
@@ -118,7 +139,17 @@ async def upload_file(
         raise handle_aws_service_error(e, "s3", "file upload")
 
 
-@router.post("/batch-upload", response_model=FileBatchUploadResponse)
+@router.post(
+    "/batch-upload",
+    response_model=FileBatchUploadResponse,
+    summary="Batch Upload Files",
+    description="Upload multiple files in a single request. Returns successes and failures.",
+    responses={
+        200: {"description": "Batch result", "content": {"application/json": {"example": {"successful_uploads": [{"file_id": "file_1", "filename": "a.png", "file_type": "image"}], "failed_uploads": [{"filename": "b.mov", "error": "Video codec not supported"}], "total_files": 2, "success_count": 1, "failure_count": 1}}}},
+        401: {"description": "Unauthorized"},
+        413: {"description": "Payload too large"}
+    }
+)
 async def batch_upload_files(
     files: List[UploadFile] = File(..., description="Files to upload"),
     file_type: Optional[FileType] = Form(None, description="File type for all files"),
@@ -215,7 +246,18 @@ async def batch_upload_files(
         raise handle_aws_service_error(e, "s3", "batch file upload")
 
 
-@router.get("/{file_id}/download")
+@router.get(
+    "/{file_id}/download",
+    summary="Download File",
+    description="Download a file by ID with range request support",
+    responses={
+        200: {"description": "File download", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}, "headers": {"Accept-Ranges": {"description": "Range support", "schema": {"type": "string", "example": "bytes"}}}},
+        206: {"description": "Partial content (range)"},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "File not found"}
+    }
+)
 async def download_file(
     file_id: str,
     request: Request,
@@ -283,11 +325,24 @@ async def download_file(
         )
 
 
-@router.get("/{file_id}/metadata", response_model=FileMetadataResponse)
+@router.get(
+    "/{file_id}/metadata",
+    response_model=FileMetadataResponse,
+    summary="Get File Metadata",
+    description="Retrieve stored metadata and a presigned download URL for a file",
+    responses={
+        200: {"description": "Metadata returned", "content": {"application/json": {"example": {"id": "file_123", "filename": "lesson.mp4", "original_filename": "lesson.mp4", "file_type": "video", "mime_type": "video/mp4", "file_size": 15728640, "checksum": "sha256:...", "created_at": "2024-09-04T09:00:00Z", "download_url": "https://s3...", "metadata": {"description": "Lesson video"}}}}},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "File not found"}
+    }
+)
 async def get_file_metadata(
     file_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    aws_file_service: AWSS3FileService = Depends(get_aws_file_service)
+    aws_file_service: AWSS3FileService = Depends(get_aws_file_service),
+    request: Request = None,
+    response: Response = None
 ) -> FileMetadataResponse:
     """
     Get file metadata by ID.
@@ -322,7 +377,7 @@ async def get_file_metadata(
                 user_id=current_user["user_info"]["id"]
             )
             
-            return FileMetadataResponse(
+            result_obj = FileMetadataResponse(
                 id=file_id,
                 filename=file_metadata.get("filename", "unknown"),
                 original_filename=file_metadata.get("original_filename", "unknown"),
@@ -334,6 +389,12 @@ async def get_file_metadata(
                 download_url=download_url,
                 metadata=file_metadata.get("metadata", {})
             )
+            if request and response:
+                etag = compute_etag(result_obj.model_dump())
+                if not_modified(request, etag):
+                    return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+                set_cache_headers(response, etag, max_age=300)
+            return result_obj
             
         except HTTPException:
             raise
@@ -355,13 +416,24 @@ async def get_file_metadata(
         )
 
 
-@router.get("", response_model=FileListResponse)
+@router.get(
+    "",
+    response_model=FileListResponse,
+    summary="List Files",
+    description="List user's files with optional type filter and pagination",
+    responses={
+        200: {"description": "Paginated file list", "content": {"application/json": {"example": {"files": [{"id": "file_1", "filename": "a.png", "file_type": "image", "file_size": 12345, "created_at": "2024-09-01T10:00:00Z"}], "total_count": 5, "page": 1, "items_per_page": 20, "has_next": False, "has_previous": False}}}},
+        401: {"description": "Unauthorized"}
+    }
+)
 async def list_files(
     file_type: Optional[FileType] = Query(None, description="Filter by file type"),
     page: int = Query(1, ge=1, description="Page number"),
     items_per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: Dict[str, Any] = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service)
+    file_service: FileService = Depends(get_file_service),
+    request: Request = None,
+    response: Response = None
 ) -> FileListResponse:
     """
     List user's files with pagination and filtering.
@@ -406,7 +478,7 @@ async def list_files(
                 metadata=file_metadata.metadata
             ))
         
-        return FileListResponse(
+        result_obj = FileListResponse(
             files=files,
             total_count=paginated_response.total_count,
             page=page,
@@ -414,6 +486,12 @@ async def list_files(
             has_next=page * items_per_page < paginated_response.total_count,
             has_previous=page > 1
         )
+        if request and response:
+            etag = compute_etag(result_obj.model_dump())
+            if not_modified(request, etag):
+                return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+            set_cache_headers(response, etag, max_age=120)
+        return result_obj
         
     except Exception as e:
         logger.error(f"Failed to list files: {e}", exc_info=True)

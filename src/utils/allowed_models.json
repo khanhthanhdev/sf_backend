@@ -21,6 +21,14 @@
     "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
     "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
     "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "bedrock/anthropic.claude-sonnet-4-20250115-v1:0",
+    "bedrock/us.amazon.nova-pro-v1:0",
+    "bedrock/us.amazon.nova-lite-v1:0",
+    "bedrock/us.amazon.nova-micro-v1:0",
+    "bedrock/meta.llama3-1-405b-instruct-v1:0",
+    "bedrock/meta.llama3-1-70b-instruct-v1:0",
+    "bedrock/cohere.command-r-plus-v1:0",
+    "bedrock/mistral.mistral-large-2402-v1:0",
     "openrouter/openai/gpt-4o",
     "openrouter/openai/gpt-4o-mini",
     "openrouter/openai/gpt-3.5-turbo",
@@ -36,6 +44,10 @@
     "text-embedding-ada-002",
     "vertex_ai/text-embedding-005",
     "azure/text-embedding-3-large",
-    "gemini/gemini-embedding-exp-03-07"
+    "gemini/gemini-embedding-exp-03-07",
+    "bedrock/amazon.titan-embed-text-v1",
+    "bedrock/amazon.titan-embed-text-v2:0",
+    "bedrock/cohere.embed-english-v3",
+    "bedrock/cohere.embed-multilingual-v3"
   ]
 }

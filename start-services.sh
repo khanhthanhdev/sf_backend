@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Simple script to start Redis and ngrok without Docker Compose
+# Simple script to start ngrok (Redis removed)
 set -e
 
-echo "🚀 Starting Redis and ngrok services manually"
+echo "🚀 Starting ngrok service (Redis has been removed)"
 echo "============================================="
 
 # Get ngrok token from .env file
@@ -19,31 +19,9 @@ fi
 
 echo "✅ Found ngrok auth token"
 
-# Check if Redis is already running
-if docker ps | grep -q "redis.*6379"; then
-    echo "✅ Redis is already running on localhost:6379"
-    REDIS_CONTAINER=$(docker ps | grep "redis.*6379" | awk '{print $1}')
-else
-    # Start Redis container
-    echo "🔧 Starting Redis..."
-    REDIS_CONTAINER=$(docker run -d \
-        --name t2m-redis-$(date +%s) \
-        --rm \
-        -p 6379:6379 \
-        redis:7-alpine \
-        redis-server --appendonly yes)
-    
-    # Wait for Redis to start
-    sleep 2
-fi
-
-# Test Redis connection
-if redis-cli ping 2>/dev/null | grep -q "PONG"; then
-    echo "✅ Redis is accessible on localhost:6379"
-else
-    echo "❌ Redis is not accessible"
-    exit 1
-fi
+# Note: Redis has been removed from this application
+echo "🔍 Redis has been removed - application now uses database-only storage"
+echo "✅ Redis removal completed"
 
 # Check if ngrok is already running
 if docker ps | grep -q "ngrok.*4040"; then

@@ -37,38 +37,21 @@ fi
 echo "✅ Prerequisites check passed"
 echo ""
 
-# Start Redis and ngrok services
-echo "🔧 Starting Redis and ngrok services..."
+# Start ngrok services (Redis removed)
+echo "🔧 Starting ngrok service (Redis has been removed)..."
 
-# Try the simple compose file first
-if docker-compose -f docker-compose.simple.yml up -d; then
-    echo "✅ Using simple Docker Compose configuration"
-    COMPOSE_FILE="docker-compose.simple.yml"
-else
-    echo "⚠️  Falling back to development configuration"
-    docker-compose -f docker-compose.dev.yml up -d
-    COMPOSE_FILE="docker-compose.dev.yml"
-fi
-
+echo "📝 Note: Redis has been completely removed from this application"
+echo "Application now uses database-only storage for better simplicity."
 echo ""
-echo "⏳ Waiting for services to start..."
-sleep 5
 
-# Check if Redis is running
-if docker-compose -f $COMPOSE_FILE ps redis | grep -q "Up"; then
-    echo "✅ Redis is running on localhost:6379"
-else
-    echo "❌ Redis failed to start"
-    exit 1
-fi
-
-# Check if ngrok is running
-if docker-compose -f $COMPOSE_FILE ps ngrok | grep -q "Up"; then
+# Check if ngrok is running  
+if docker-compose -f docker-compose.simple.yml ps ngrok | grep -q "Up"; then
     echo "✅ ngrok is running"
     echo "   📊 ngrok Web Interface: http://localhost:4040"
 else
     echo "❌ ngrok failed to start"
-    exit 1
+    echo "Starting ngrok manually..."
+    docker-compose -f docker-compose.simple.yml up -d
 fi
 
 echo ""
@@ -93,16 +76,16 @@ echo "   curl https://your-ngrok-url.ngrok.io/health"
 echo ""
 echo "📝 Useful Commands:"
 echo "=================="
-echo "• View logs: docker-compose -f $COMPOSE_FILE logs -f"
-echo "• Stop services: docker-compose -f $COMPOSE_FILE down"
-echo "• Restart services: docker-compose -f $COMPOSE_FILE restart"
-echo "• Check Redis: redis-cli ping"
+echo "• View logs: docker-compose -f docker-compose.simple.yml logs -f"
+echo "• Stop services: docker-compose -f docker-compose.simple.yml down"
+echo "• Restart services: docker-compose -f docker-compose.simple.yml restart"
+echo "• Redis: REMOVED (application uses database-only storage)"
 echo ""
 echo "🌐 URLs:"
 echo "========"
 echo "• FastAPI (local): http://localhost:8000"
 echo "• FastAPI Docs: http://localhost:8000/docs"
 echo "• ngrok Dashboard: http://localhost:4040"
-echo "• Redis: localhost:6379"
+echo "• Redis: REMOVED from application"
 echo ""
 echo "✨ Development environment is ready!"

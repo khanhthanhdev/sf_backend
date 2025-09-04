@@ -8,10 +8,8 @@ including authentication, service injection, and request validation.
 import logging
 from typing import Dict, Any, Optional
 from fastapi import Depends, HTTPException, status, Request, Header
-from redis.asyncio import Redis
 
 from ..core.auth import verify_clerk_token, AuthenticationError, extract_bearer_token
-from ..core.redis import get_redis
 from ..services.video_service import VideoService
 from ..services.enhanced_video_service import EnhancedVideoService
 from ..services.job_service import JobService
@@ -28,8 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_current_user(
-    authorization: Optional[str] = Header(None),
-    redis_client: Redis = Depends(get_redis)
+    authorization: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
     FastAPI dependency to get current authenticated user.
@@ -39,7 +36,6 @@ async def get_current_user(
     
     Args:
         authorization: Authorization header with Bearer token
-        redis_client: Redis client for caching user info
         
     Returns:
         Dict containing user information and token claims
@@ -101,8 +97,7 @@ async def get_current_user(
 
 
 async def get_optional_user(
-    authorization: Optional[str] = Header(None),
-    redis_client: Redis = Depends(get_redis)
+    authorization: Optional[str] = Header(None)
 ) -> Optional[Dict[str, Any]]:
     """
     FastAPI dependency to get current user if authenticated (optional).
@@ -112,7 +107,6 @@ async def get_optional_user(
     
     Args:
         authorization: Authorization header with Bearer token (optional)
-        redis_client: Redis client for caching user info
         
     Returns:
         Dict containing user information or None if not authenticated
@@ -121,7 +115,7 @@ async def get_optional_user(
         if not authorization:
             return None
         
-        return await get_current_user(authorization, redis_client)
+        return await get_current_user(authorization)
         
     except HTTPException:
         # Return None for optional authentication
@@ -129,51 +123,6 @@ async def get_optional_user(
     except Exception as e:
         logger.error("Optional authentication error", extra={"error": str(e)}, exc_info=True)
         return None
-
-
-def get_job_service(
-    redis_client: Redis = Depends(get_redis)
-) -> JobService:
-    """
-    FastAPI dependency to get JobService instance.
-    
-    Args:
-        redis_client: Redis client dependency
-        
-    Returns:
-        JobService instance
-    """
-    return JobService(redis_client)
-
-
-def get_queue_service(
-    redis_client: Redis = Depends(get_redis)
-) -> QueueService:
-    """
-    FastAPI dependency to get QueueService instance.
-    
-    Args:
-        redis_client: Redis client dependency
-        
-    Returns:
-        QueueService instance
-    """
-    return QueueService(redis_client)
-
-
-def get_file_service(
-    redis_client: Redis = Depends(get_redis)
-) -> FileService:
-    """
-    FastAPI dependency to get FileService instance.
-    
-    Args:
-        redis_client: Redis client dependency
-        
-    Returns:
-        FileService instance
-    """
-    return FileService(redis_client)
 
 
 # AWS Service Dependencies
@@ -219,6 +168,46 @@ def get_rds_connection_manager(
         )
     
     return aws_factory.rds_manager
+
+
+def get_job_service(
+    db_manager: RDSConnectionManager = Depends(get_rds_connection_manager)
+) -> JobService:
+    """
+    FastAPI dependency to get JobService instance (database-only).
+    
+    Args:
+        db_manager: RDS connection manager dependency
+        
+    Returns:
+        JobService instance
+    """
+    return JobService(db_manager)
+
+
+def get_queue_service() -> QueueService:
+    """
+    FastAPI dependency to get QueueService instance (in-memory).
+    
+    Returns:
+        QueueService instance
+    """
+    return QueueService()
+
+
+def get_file_service(
+    db_manager: Optional[RDSConnectionManager] = Depends(get_rds_connection_manager)
+) -> FileService:
+    """
+    FastAPI dependency to get FileService instance (database-only).
+    
+    Args:
+        db_manager: RDS connection manager dependency
+        
+    Returns:
+        FileService instance
+    """
+    return FileService(db_manager)
 
 
 def get_aws_file_service(
@@ -549,72 +538,25 @@ def validate_request_size(
             )
 
 
-async def rate_limit_check(
-    current_user: Dict[str, Any],
-    redis_client: Redis,
-    operation: str,
-    limit: int = 10,
-    window_seconds: int = 60
-) -> None:
-    """
-    Check rate limits for user operations.
-    
-    Args:
-        current_user: Current authenticated user
-        redis_client: Redis client for rate limit storage
-        operation: Operation name for rate limiting
-        limit: Maximum operations per window
-        window_seconds: Time window in seconds
-        
-    Raises:
-        HTTPException: If rate limit exceeded
-    """
-    user_id = current_user["user_info"]["id"]
-    key = f"rate_limit:{user_id}:{operation}"
-    
-    try:
-        # Get current count
-        current_count = await redis_client.get(key)
-        current_count = int(current_count) if current_count else 0
-        
-        if current_count >= limit:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Rate limit exceeded for {operation}. Try again later.",
-                headers={"Retry-After": str(window_seconds)}
-            )
-        
-        # Increment counter
-        pipe = redis_client.pipeline()
-        pipe.incr(key)
-        pipe.expire(key, window_seconds)
-        await pipe.execute()
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Rate limit check failed", extra={"error": str(e)}, exc_info=True)
-        # Don't block requests if rate limiting fails
-        pass
+# Rate limiting will be disabled without Redis
+# TODO: Implement alternative rate limiting mechanism if needed
 
 
 # Additional authentication dependencies for compatibility
 async def get_authenticated_user(
-    authorization: Optional[str] = Header(None),
-    redis_client: Redis = Depends(get_redis)
+    authorization: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
     Alias for get_current_user for backward compatibility.
     
     Returns the user_info portion of the authentication data.
     """
-    auth_info = await get_current_user(authorization, redis_client)
+    auth_info = await get_current_user(authorization)
     return auth_info["user_info"]
 
 
 async def get_authenticated_user_id(
-    authorization: Optional[str] = Header(None),
-    redis_client: Redis = Depends(get_redis)
+    authorization: Optional[str] = Header(None)
 ) -> str:
     """
     Get just the user ID from authentication.
@@ -622,13 +564,12 @@ async def get_authenticated_user_id(
     Returns:
         str: The authenticated user's ID
     """
-    auth_info = await get_current_user(authorization, redis_client)
+    auth_info = await get_current_user(authorization)
     return auth_info["user_info"]["id"]
 
 
 async def get_verified_user(
-    authorization: Optional[str] = Header(None),
-    redis_client: Redis = Depends(get_redis)
+    authorization: Optional[str] = Header(None)
 ) -> Dict[str, Any]:
     """
     Get authenticated user that has verified email.
@@ -639,7 +580,7 @@ async def get_verified_user(
     Raises:
         HTTPException: If user is not verified
     """
-    auth_info = await get_current_user(authorization, redis_client)
+    auth_info = await get_current_user(authorization)
     user_info = auth_info["user_info"]
     
     # Check email verification status from email_addresses array

@@ -5,6 +5,7 @@ Comprehensive logging for monitoring and debugging.
 
 import time
 import uuid
+import psutil
 from typing import Callable, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -56,8 +57,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if request.url.path in self.skip_paths:
             return await call_next(request)
         
-        # Generate unique request ID
-        request_id = str(uuid.uuid4())
+        # Use existing correlation ID from state if available; otherwise generate
+        correlation_id = getattr(request.state, "correlation_id", None) or str(uuid.uuid4())
+        # Ensure it's on state for downstream use
+        request.state.correlation_id = correlation_id
         
         # Start timing
         start_time = time.time()
@@ -69,7 +72,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         
         # Log request
         request_data = {
-            "request_id": request_id,
+            "correlation_id": correlation_id,
             "method": request.method,
             "url": str(request.url),
             "path": request.url.path,
@@ -102,7 +105,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             logger.error(
                 "HTTP request failed",
                 extra={
-                    "request_id": request_id,
+                    "correlation_id": correlation_id,
                     "method": request.method,
                     "url": str(request.url),
                     "duration_ms": round(duration_ms, 2),
@@ -117,13 +120,21 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         duration_ms = (time.time() - start_time) * 1000
         
         # Extract response information
+        # Capture simple resource usage
+        try:
+            proc = psutil.Process()
+            mem_mb = round(proc.memory_info().rss / (1024 ** 2), 2)
+        except Exception:
+            mem_mb = None
+
         response_data = {
-            "request_id": request_id,
+            "correlation_id": correlation_id,
             "method": request.method,
             "url": str(request.url),
             "status_code": response.status_code,
             "duration_ms": round(duration_ms, 2),
             "response_size": response.headers.get("content-length", "unknown"),
+            "process_memory_mb": mem_mb,
         }
         
         # Add performance metrics
@@ -145,7 +156,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             logger.info("HTTP request completed", **response_data)
         
         # Add headers to response
-        response.headers["X-Request-ID"] = request_id
+        # Primary correlation header
+        try:
+            from ..core.config import get_settings as _get_settings
+            _settings = _get_settings()
+            response.headers[_settings.correlation_id_header] = correlation_id
+        except Exception:
+            response.headers["X-Correlation-ID"] = correlation_id
+        # Backward-compatible header
+        response.headers["X-Request-ID"] = correlation_id
         response.headers["X-Process-Time"] = str(round(duration_ms, 2))
         
         # Add performance metrics headers

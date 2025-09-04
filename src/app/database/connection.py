@@ -53,6 +53,8 @@ class ConnectionConfig(BaseModel):
     # Health check settings
     health_check_interval: int = 30  # seconds
     connection_timeout: int = 10
+    # Performance logging
+    slow_query_threshold_ms: int = 250
     
     @property
     def asyncpg_dsn(self) -> str:
@@ -98,6 +100,20 @@ class RDSConnectionManager:
         self._last_health_check = None
         
         logger.info(f"Initializing RDS connection manager for {config.host}:{config.port}/{config.database}")
+
+    def _log_if_slow(self, query_time_seconds: float, operation: str, details: Optional[Dict[str, Any]] = None):
+        """Log slow queries based on configured threshold."""
+        try:
+            threshold = (self.config.slow_query_threshold_ms or 0) / 1000.0
+        except Exception:
+            threshold = 0.25
+        if query_time_seconds >= threshold:
+            extra = details or {}
+            extra.update({
+                "operation": operation,
+                "duration_ms": round(query_time_seconds * 1000, 2)
+            })
+            logger.warning("Slow DB operation detected", extra=extra)
     
     async def initialize(self) -> bool:
         """Initialize connection pool and SQLAlchemy engine."""
@@ -300,6 +316,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "execute_query")
                 
                 return rows
                 
@@ -322,6 +339,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "execute_command")
                 
                 return result
                 
@@ -396,6 +414,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "save_pydantic_model", {"table": table_name})
                 
                 return dict(result) if result else {}
                 
@@ -432,6 +451,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "get_pydantic_model", {"table": table_name})
                 
                 if result:
                     # Convert database row to dictionary and handle JSON fields
@@ -501,6 +521,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "get_pydantic_models", {"table": table_name, "limit": limit or 0, "offset": offset or 0})
                 
                 models = []
                 json_fields = ['metadata', 'configuration', 'error_info', 'metrics', 
@@ -582,6 +603,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "update_pydantic_model", {"table": table_name})
                 
                 # Check if any rows were affected
                 return result.split()[-1] != '0'
@@ -635,6 +657,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += 1
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time)
+                self._log_if_slow(query_time, "delete_pydantic_model", {"table": table_name, "soft_delete": soft_delete})
                 
                 # Check if any rows were affected
                 return result.split()[-1] != '0'
@@ -726,6 +749,7 @@ class RDSConnectionManager:
                 self.stats.total_queries += len(models)
                 query_time = time.time() - start_time
                 self._update_avg_query_time(query_time / len(models))
+                self._log_if_slow(query_time, "bulk_save_pydantic_models", {"table": table_name, "count": len(models)})
                 
                 return results
                 

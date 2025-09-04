@@ -1,3 +1,17 @@
+"""
+Video generation orchestration for Theory2Manim.
+
+This module coordinates the end-to-end pipeline:
+- Selects and configures model providers (OpenAI, Gemini, Bedrock, OpenRouter, Vertex AI)
+- Plans scenes, generates Manim code, and renders videos
+- Supports concurrency for scene generation and rendering for performance
+
+Design notes:
+- Uses factory methods to decouple provider selection and component creation
+- Follows single responsibility by wrapping existing implementations with thin async adapters
+- Adds explicit type hints and docstrings for clarity and maintainability
+"""
+
 import os
 import json
 import asyncio
@@ -27,6 +41,11 @@ try:
 except ImportError:
     GeminiWrapper = None
 
+try:
+    from mllm_tools.bedrock import BedrockWrapper
+except ImportError:
+    BedrockWrapper = None
+
 from src.core.video_planner import EnhancedVideoPlanner
 from src.core.code_generator import CodeGenerator  # Use existing CodeGenerator
 from src.core.video_renderer import VideoRenderer  # Use existing VideoRenderer
@@ -43,7 +62,7 @@ except ImportError:
     _code_font_size = _code_disable = _code_limit = _prompt_manim_cheatsheet = ""
 
 # Load configuration
-load_dotenv(override=True)
+load_dotenv()
 
 # Load allowed models
 allowed_models_path = os.path.join(os.path.dirname(__file__), 'src', 'utils', 'allowed_models.json')
@@ -116,6 +135,18 @@ class ComponentFactory:
             if OpenRouterWrapper is None:
                 raise ImportError("OpenRouterWrapper not available but OpenRouter model requested")
             return OpenRouterWrapper(
+                model_name=normalized,
+                temperature=0.7,
+                print_cost=True,
+                verbose=config.verbose,
+                use_langfuse=config.use_langfuse
+            )
+
+        # AWS Bedrock models
+        if normalized.startswith('bedrock/'):
+            if BedrockWrapper is None:
+                raise ImportError("BedrockWrapper not available but Bedrock model requested")
+            return BedrockWrapper(
                 model_name=normalized,
                 temperature=0.7,
                 print_cost=True,

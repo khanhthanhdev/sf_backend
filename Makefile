@@ -111,11 +111,12 @@ dev-setup-full: install-deps
 	@chmod +x setup-dev.sh
 	@./setup-dev.sh
 
-# Start development services (Redis + ngrok)
+# Start development services (ngrok only - Redis removed)
 dev-services:
-	@echo "Starting development services (Redis + ngrok)..."
-	docker-compose -f docker-compose.dev.yml up -d
+	@echo "Starting development services (ngrok only - Redis removed)..."
+	docker-compose -f docker-compose.simple.yml up -d
 	@echo "Services started! Visit http://localhost:4040 for ngrok dashboard"
+	@echo "Note: Redis has been removed from this application"
 
 # Stop development services
 dev-services-stop:

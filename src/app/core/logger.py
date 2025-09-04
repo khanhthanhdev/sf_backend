@@ -1,6 +1,7 @@
 """
 Logging configuration using structlog for structured logging.
-Supports both JSON and text formats with proper log levels.
+Supports both JSON and text formats with proper log levels and
+automatic inclusion of correlation IDs via contextvars.
 """
 
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import structlog
 from structlog.types import FilteringBoundLogger
+from structlog.contextvars import bind_contextvars, merge_contextvars, clear_contextvars
 
 from .config import get_settings
 
@@ -23,36 +25,24 @@ def configure_logging() -> FilteringBoundLogger:
     Returns:
         FilteringBoundLogger: Configured logger instance
     """
-    # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, settings.log_level),
-    )
-    
     # Configure structlog processors
-    processors = [
-        # Add timestamp
+    base_processors = [
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
+        merge_contextvars,  # include contextvars such as correlation_id
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
     ]
     
-    # Add environment-specific processors
+    # Create renderer depending on environment
     if settings.is_development:
-        # Development: colorized console output
-        processors.extend([
-            structlog.dev.ConsoleRenderer(colors=True)
-        ])
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
     else:
-        # Production: JSON output
-        processors.extend([
-            structlog.processors.dict_tracebacks,
-            structlog.processors.JSONRenderer()
-        ])
+        renderer = structlog.processors.JSONRenderer()
+
+    processors = [*base_processors, renderer]
     
     # Configure structlog
     structlog.configure(
@@ -62,6 +52,21 @@ def configure_logging() -> FilteringBoundLogger:
         context_class=dict,
         cache_logger_on_first_use=True,
     )
+
+    # Bridge standard logging to use structlog's ProcessorFormatter so modules
+    # using logging.getLogger(...) also emit structured logs consistently.
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=renderer,
+        foreign_pre_chain=base_processors,
+    )
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, settings.log_level))
     
     # Create and return logger
     logger = structlog.get_logger("fastapi_video_backend")
@@ -90,6 +95,23 @@ def get_logger(name: str = None) -> FilteringBoundLogger:
     if name:
         return structlog.get_logger(name)
     return structlog.get_logger()
+
+
+def bind_correlation_id(correlation_id: str) -> None:
+    """Bind correlation ID into structlog contextvars for automatic inclusion."""
+    try:
+        bind_contextvars(correlation_id=correlation_id)
+    except Exception:
+        # Contextvars may not be available in some execution contexts
+        pass
+
+
+def clear_log_context() -> None:
+    """Clear any bound context variables (e.g., at end of request)."""
+    try:
+        clear_contextvars()
+    except Exception:
+        pass
 
 
 def log_request_info(
