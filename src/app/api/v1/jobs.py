@@ -31,7 +31,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.get("", response_model=JobListResponse)
+@router.get(
+    "",
+    response_model=JobListResponse,
+    summary="List Jobs",
+    description=(
+        "List jobs for the current user with pagination, filtering, and sorting.\n\n"
+        "Query params: `page`, `items_per_page`, `status`, `type`, `priority`, `created_after`, `created_before`."
+    ),
+    responses={
+        200: {
+            "description": "Paginated job list",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "jobs": [
+                            {
+                                "job_id": "550e8400-e29b-41d4-a716-446655440000",
+                                "status": "processing",
+                                "progress": {"percentage": 45.5, "current_stage": "rendering"},
+                                "created_at": "2024-09-01T10:00:00Z",
+                                "estimated_completion": "2024-09-01T10:07:00Z"
+                            }
+                        ],
+                        "total_count": 23,
+                        "page": 1,
+                        "items_per_page": 10,
+                        "has_next": True,
+                        "has_previous": False
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized",
+            "content": {"application/json": {"example": {"message": "Unauthorized", "error": {"code": "UNAUTHORIZED"}}}}
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"message": "Rate limit exceeded", "error": {"code": "RATE_LIMIT_EXCEEDED"}}}}
+        },
+        500: {
+            "description": "Internal error",
+            "content": {"application/json": {"example": {"message": "Internal server error", "error": {"code": "INTERNAL_ERROR"}}}}
+        }
+    }
+)
 async def list_jobs(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -99,7 +144,20 @@ async def list_jobs(
         raise handle_aws_service_error(e, "rds", "list jobs")
 
 
-@router.post("/{job_id}/cancel", response_model=Dict[str, Any])
+@router.post(
+    "/{job_id}/cancel",
+    response_model=Dict[str, Any],
+    summary="Cancel Job",
+    description="Cancel a queued or processing job. Returns the new status if successful.",
+    responses={
+        200: {"description": "Cancellation successful", "content": {"application/json": {"example": {"success": True, "job_id": "550e...", "previous_status": "processing", "new_status": "cancelled"}}}},
+        401: {"description": "Unauthorized", "content": {"application/json": {"example": {"message": "Unauthorized", "error": {"code": "UNAUTHORIZED"}}}}},
+        403: {"description": "Forbidden", "content": {"application/json": {"example": {"message": "Access denied", "error": {"code": "FORBIDDEN"}}}}},
+        404: {"description": "Job not found"},
+        409: {"description": "Job not cancellable", "content": {"application/json": {"example": {"message": "Job cannot be cancelled. Current status: completed", "error": {"code": "CONFLICT"}}}}},
+        500: {"description": "Internal error"}
+    }
+)
 async def cancel_job(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -193,7 +251,19 @@ async def cancel_job(
         raise handle_aws_service_error(e, "rds", "cancel job")
 
 
-@router.delete("/{job_id}", response_model=Dict[str, Any])
+@router.delete(
+    "/{job_id}",
+    response_model=Dict[str, Any],
+    summary="Delete Job (Soft)",
+    description="Soft delete a job (preserved for audit).",
+    responses={
+        200: {"description": "Deletion successful", "content": {"application/json": {"example": {"success": True, "job_id": "550e...", "deleted_at": "2024-09-04T09:05:00Z"}}}},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Job not found"},
+        500: {"description": "Internal error"}
+    }
+)
 async def delete_job(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -284,7 +354,18 @@ async def delete_job(
         raise handle_aws_service_error(e, "rds", "delete job")
 
 
-@router.get("/{job_id}/logs", response_model=Dict[str, Any])
+@router.get(
+    "/{job_id}/logs",
+    response_model=Dict[str, Any],
+    summary="Get Job Logs",
+    description="Retrieve processing logs for a job with pagination and level filters.",
+    responses={
+        200: {"description": "Logs returned", "content": {"application/json": {"example": {"job_id": "550e...", "logs": [{"timestamp": "2024-09-04T09:00:01Z", "level": "INFO", "message": "Starting render"}], "pagination": {"offset": 0, "limit": 100, "total_count": 250, "returned_count": 100, "has_more": True}}}}},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Job not found"}
+    }
+)
 async def get_job_logs(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -403,7 +484,18 @@ async def get_job_logs(
         raise handle_aws_service_error(e, "rds", "get job logs")
 
 
-@router.get("/{job_id}", response_model=JobStatusResponse)
+@router.get(
+    "/{job_id}",
+    response_model=JobStatusResponse,
+    summary="Get Job Details",
+    description="Get comprehensive job details including status, progress, metrics, and errors.",
+    responses={
+        200: {"description": "Job details returned", "content": {"application/json": {"example": {"job_id": "550e...", "status": "processing", "progress": {"percentage": 72.5, "current_stage": "compositing"}, "metrics": {"processing_time_seconds": 320.5}, "created_at": "2024-09-04T08:50:00Z", "updated_at": "2024-09-04T09:02:00Z"}}}},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Job not found"}
+    }
+)
 async def get_job_details(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),

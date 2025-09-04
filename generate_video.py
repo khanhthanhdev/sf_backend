@@ -107,48 +107,64 @@ class ComponentFactory:
     
     @staticmethod
     def create_model(model_name: str, config: VideoGenerationConfig) -> ModelProvider:
-        """Create AI model wrapper."""
+        """Create AI model wrapper with explicit provider routing."""
+        normalized = (model_name or "").strip()
+        provider_prefix = normalized.split("/", 1)[0] if "/" in normalized else ""
+
         # Use OpenRouter wrapper for OpenRouter models
-        if model_name.startswith('openrouter/'):
+        if normalized.startswith('openrouter/'):
             if OpenRouterWrapper is None:
                 raise ImportError("OpenRouterWrapper not available but OpenRouter model requested")
             return OpenRouterWrapper(
-                model_name=model_name,
+                model_name=normalized,
                 temperature=0.7,
                 print_cost=True,
                 verbose=config.verbose,
                 use_langfuse=config.use_langfuse
             )
-        elif model_name.startswith('gemini/') or 'gemini' in model_name.lower():
-            # Try to use Gemini wrapper if available
+        
+        # Vertex AI (Gemini via Vertex)
+        if normalized.startswith('vertex_ai/'):
+            try:
+                from mllm_tools.vertex_ai import VertexAIWrapper  # local import to avoid hard dep
+            except Exception as e:
+                raise ImportError(f"VertexAIWrapper not available: {e}")
+            model_core = normalized.split('/', 1)[1]
+            return VertexAIWrapper(
+                model_name=model_core,
+                temperature=0.7,
+                verbose=config.verbose
+            )
+
+        # Native Gemini (google generative ai)
+        if normalized.startswith('gemini/') or provider_prefix == 'gemini' or normalized.lower().startswith('gemini-'):
             if GeminiWrapper is not None:
                 return GeminiWrapper(
-                    model_name=model_name.replace('gemini/', ''),
+                    model_name=normalized.split('/', 1)[-1],
                     temperature=0.7,
                     verbose=config.verbose
                 )
-            elif LiteLLMWrapper is not None:
-                # Fallback to LiteLLM for Gemini models
+            # Fallback to LiteLLM for Gemini via generic route
+            if LiteLLMWrapper is not None:
                 return LiteLLMWrapper(
-                    model_name=model_name,
+                    model_name=normalized,
                     temperature=0.7,
                     print_cost=True,
                     verbose=config.verbose,
                     use_langfuse=config.use_langfuse
                 )
-            else:
-                raise ImportError("No model wrapper available for Gemini models")
-        else:
-            # Use LiteLLM wrapper for other models
-            if LiteLLMWrapper is None:
-                raise ImportError("LiteLLMWrapper not available")
-            return LiteLLMWrapper(
-                model_name=model_name,
-                temperature=0.7,
-                print_cost=True,
-                verbose=config.verbose,
-                use_langfuse=config.use_langfuse
-            )
+            raise ImportError("No model wrapper available for Gemini models")
+
+        # Default to LiteLLM for OpenAI/Azure/Bedrock/bare names like gpt-4o, o3, etc.
+        if LiteLLMWrapper is None:
+            raise ImportError("LiteLLMWrapper not available")
+        return LiteLLMWrapper(
+            model_name=normalized,
+            temperature=0.7,
+            print_cost=True,
+            verbose=config.verbose,
+            use_langfuse=config.use_langfuse
+        )
     
     @staticmethod
     def create_planner(planner_model: ModelProvider, helper_model: ModelProvider, 
@@ -543,6 +559,11 @@ class EnhancedVideoGenerator:
         print(f"   Planner: {config.planner_model}")
         print(f"   Scene: {config.scene_model or config.planner_model}")
         print(f"   Helper: {config.helper_model or config.planner_model}")
+        # Provider diagnostics to verify proper routing
+        try:
+            print(f"   Providers: planner={type(self.planner_model).__name__}, scene={type(self.scene_model).__name__}, helper={type(self.helper_model).__name__}")
+        except Exception:
+            pass
         print(f"   Max Scene Concurrency: {config.max_scene_concurrency}")
         print(f"   Caching: {'✅' if config.enable_caching else '❌'}")
         print(f"   GPU Acceleration: {'✅' if config.use_gpu_acceleration else '❌'}")
